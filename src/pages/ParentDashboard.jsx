@@ -47,14 +47,14 @@ function ParentDashboard({ session, onLogout }) {
   const summaryCards = useMemo(() => {
     const totalChildren = childrenStats.length
     const totalLogs = childrenStats.reduce((count, child) => count + (child.playtime_logs?.length || 0), 0)
-    const totalScores = childrenStats.reduce((count, child) => count + (child.scores?.length || 0), 0)
+    const totalMissions = childrenStats.reduce((count, child) => count + (child.missions?.length || 0), 0)
     const activeChildren = childrenStats.filter((child) => (child.playtime_logs || []).length > 0).length
 
     return [
       { label: 'Linked Children', value: totalChildren },
       { label: 'Active Children', value: activeChildren },
       { label: 'Playtime Entries', value: totalLogs },
-      { label: 'Mission Records', value: totalScores },
+      { label: 'Mission Records', value: totalMissions },
     ]
   }, [childrenStats])
 
@@ -282,8 +282,8 @@ function ParentDashboard({ session, onLogout }) {
             </article>
 
             <article className="panel">
-              <h2>Mission Scores</h2>
-              {selectedChild?.scores?.length ? (
+              <h2>Mission Progress</h2>
+              {selectedChild?.missions?.length ? (
                 <div className="table-wrap">
                   <table>
                     <thead>
@@ -294,11 +294,11 @@ function ParentDashboard({ session, onLogout }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedChild.scores.map((score, index) => (
-                        <tr key={`${score.mission_id}-${index}`}>
-                          <td>{score.mission_id}</td>
-                          <td>{score.status}</td>
-                          <td>{score.score}</td>
+                      {selectedChild.missions.map((m, index) => (
+                        <tr key={`${m.mission_id}-${index}`}>
+                          <td>{m.mission_id}</td>
+                          <td>{m.status}</td>
+                          <td>{m.score}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -308,6 +308,34 @@ function ParentDashboard({ session, onLogout }) {
                 <p className="info-text">No mission records for the selected child.</p>
               )}
             </article>
+          </section>
+
+          <section className="panel" style={{ marginTop: '1.5rem' }}>
+            <h2>Quiz Results</h2>
+            {selectedChild?.scores?.length ? (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Quiz ID</th>
+                      <th>Score</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedChild.scores.map((score, index) => (
+                      <tr key={`${score.quiz_id}-${index}`}>
+                        <td>{score.quiz_id}</td>
+                        <td>{score.score}%</td>
+                        <td>{score.updated_at ? new Date(score.updated_at).toLocaleDateString() : 'N/A'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="info-text">No quiz results found for the selected child.</p>
+            )}
           </section>
             </>
           )}

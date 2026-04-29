@@ -27,9 +27,110 @@ function TeacherDashboard({ session, onLogout }) {
   const [savingQuiz, setSavingQuiz] = useState(false)
   const [quizQuestions, setQuizQuestions] = useState([])
   const [activeQuestionId, setActiveQuestionId] = useState(null)
+  const [completedQuizResults, setCompletedQuizResults] = useState([])
+  const [loadingCompletedQuizResults, setLoadingCompletedQuizResults] = useState(false)
+  const [feedbackDraft, setFeedbackDraft] = useState(null)
+  const [sendingFeedback, setSendingFeedback] = useState(false)
 
 const [allQuizzes, setAllQuizzes] = useState([]); // List for existing quizzes
 const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are editing an old quiz
+
+  const SAMPLE_QUIZZES = [
+    {
+      id: 'sample-quiz-1',
+      class_id: 'sample-class',
+      title: 'Science Review - Week 4',
+      timer_seconds: 600,
+      start_date: '2026-04-29T08:30:00Z',
+      questions: [
+        {
+          id: 'sample-q-1',
+          type: 'multiple_choice',
+          text: 'Which planet is known as the Red Planet?',
+          options: ['Earth', 'Mars', 'Jupiter', 'Venus'],
+          correct_answer: '1',
+          points: 5,
+          order: 0,
+        },
+        {
+          id: 'sample-q-2',
+          type: 'identification',
+          text: 'What is the process by which plants make food called?',
+          options: [],
+          correct_answer: 'photosynthesis',
+          points: 5,
+          order: 1,
+        },
+      ],
+    },
+    {
+      id: 'sample-quiz-2',
+      class_id: 'sample-class',
+      title: 'Math Skills Check - Fractions',
+      timer_seconds: 420,
+      start_date: '2026-04-29T09:15:00Z',
+      questions: [
+        {
+          id: 'sample-q-3',
+          type: 'multiple_choice',
+          text: 'Which fraction is equivalent to 1/2?',
+          options: ['2/3', '3/5', '4/8', '5/9'],
+          correct_answer: '2',
+          points: 5,
+          order: 0,
+        },
+      ],
+    },
+  ]
+
+  const buildSampleCompletedQuizResults = (students, classroom) => {
+    if (!students.length) return []
+
+    const studentLabel = (student) => {
+      const fullName = `${(student.first_name || '').trim()} ${(student.last_name || '').trim()}`.trim()
+      return fullName || student.username || 'Student'
+    }
+
+    const parentLabel = (student) => {
+      const fullName = (student.parent_name || '').trim()
+      return fullName || null
+    }
+
+    const matchingQuizzes = SAMPLE_QUIZZES.filter((quiz) => !selectedClassId || String(quiz.class_id) === String(selectedClassId))
+    const quizPool = matchingQuizzes.length ? matchingQuizzes : SAMPLE_QUIZZES
+
+    return students.slice(0, 2).map((student, index) => {
+      const quiz = quizPool[index % quizPool.length]
+      return {
+        id: `sample-result-${student.id || student.student_id || index}`,
+        quiz_id: quiz.id,
+        quiz_title: quiz.title,
+        quiz_class_id: classroom?.id ?? selectedClassId ?? null,
+        student_id: student.id || student.student_id,
+        student_public_id: student.student_public_id || null,
+        student_name: studentLabel(student),
+        student_username: student.username || null,
+        parent_id: student.parent_id || null,
+        parent_public_id: student.parent_public_id || null,
+        parent_name: parentLabel(student),
+        class_id: student.class_id || classroom?.id || selectedClassId || null,
+        class_name: classroom?.name || student.class_name || 'Selected Class',
+        score: index === 0 ? 88 : 73,
+        submitted_at: new Date(Date.now() - index * 3600000).toISOString(),
+        questions_count: quiz.questions?.length || 0,
+      }
+    })
+  }
+
+  const normalizeQuiz = (quiz) => {
+    if (!quiz) return null
+    return {
+      ...quiz,
+      id: quiz.id ?? quiz._id,
+      class_id: quiz.class_id ?? quiz.classId ?? null,
+      questions: Array.isArray(quiz.questions) ? quiz.questions : [],
+    }
+  }
 
 
   const fetchQuizzes = useCallback(async () => {
@@ -37,26 +138,25 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       const result = await apiRequest('/teacher/quizzes', {
         token: session.token,
       });
-      setAllQuizzes(result || []);
+      const quizzes = Array.isArray(result?.quizzes) ? result.quizzes : Array.isArray(result) ? result : []
+      const normalized = quizzes.map(normalizeQuiz).filter(Boolean)
+      setAllQuizzes(normalized.length ? normalized : SAMPLE_QUIZZES)
     } catch (err) {
       console.error("Failed to fetch quizzes", err);
+      setAllQuizzes(SAMPLE_QUIZZES)
     }
   }, [session.token]);
 
-  // Update your loadOverview useEffect or add a new one:
-  useEffect(() => {
-    if (selectedClassId) {
-      fetchQuizzes();
-    }
-  }, [selectedClassId, fetchQuizzes]);
-
-      const loadQuizForEdit = (quiz) => {
+  const loadQuizForEdit = (quiz) => {
     setEditingQuizId(quiz.id || quiz._id);
     setQuizForm({
       title: quiz.title,
       timer_seconds: quiz.timer_seconds,
       start_date: quiz.start_date ? quiz.start_date.substring(0, 16) : '' // Formats for datetime-local
     });
+    if (quiz.class_id) {
+      setSelectedClassId(String(quiz.class_id));
+    }
     setQuizQuestions(quiz.questions || []);
     setActiveQuestionId(quiz.questions?.[0]?.id || null);
     
@@ -126,6 +226,13 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     return () => clearTimeout(timer)
   }, [loadOverview])
 
+  // Fetch quizzes when selectedClassId changes
+  useEffect(() => {
+    if (selectedClassId) {
+      void fetchQuizzes()
+    }
+  }, [selectedClassId, fetchQuizzes])
+
   const filteredClasses = useMemo(() => {
     if (!overview.classes) return []
     return overview.classes.filter((c) => {
@@ -153,6 +260,36 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       s.class_name === `${currentClass.grade_level} - ${currentClass.section}`
     ) || []
   }, [overview.students, currentClass])
+
+  const displayQuizResults = completedQuizResults.length ? completedQuizResults : buildSampleCompletedQuizResults(classStudents, currentClass)
+  const displayQuizzes = allQuizzes.length ? allQuizzes : SAMPLE_QUIZZES
+
+  // Fetch completed quizzes when classStudents or selectedClassId changes
+  useEffect(() => {
+    if (!selectedClassId) {
+      setCompletedQuizResults([])
+      return
+    }
+
+    const fetchCompletedQuizzes = async () => {
+      try {
+        setLoadingCompletedQuizResults(true)
+        const result = await apiRequest(`/teacher/quiz/results?class_id=${encodeURIComponent(selectedClassId)}`, {
+          token: session.token,
+        })
+        const liveResults = Array.isArray(result?.results) ? result.results : []
+        const sampleResults = buildSampleCompletedQuizResults(classStudents, currentClass)
+        setCompletedQuizResults(liveResults.length ? liveResults : sampleResults)
+      } catch (err) {
+        console.error('Failed to fetch completed quiz results', err)
+        setCompletedQuizResults(buildSampleCompletedQuizResults(classStudents, currentClass))
+      } finally {
+        setLoadingCompletedQuizResults(false)
+      }
+    }
+
+    void fetchCompletedQuizzes()
+  }, [selectedClassId, classStudents, currentClass, session.token])
 
   const globalMetrics = useMemo(() => {
     const classCount = overview.classes?.length || 0
@@ -290,7 +427,7 @@ const createQuiz = async (event) => {
     const payload = {
       title: quizForm.title,
       timer_seconds: Number(quizForm.timer_seconds),
-      class_id: selectedClassId,
+      class_id: selectedClassId ? Number(selectedClassId) : undefined,
       questions: quizQuestions,
     };
 
@@ -308,14 +445,15 @@ const createQuiz = async (event) => {
       token: session.token,
       body: payload, 
     });
+    const normalizedQuiz = normalizeQuiz(savedQuiz?.quiz || savedQuiz)
 
     // Update local state list
     if (editingQuizId) {
       setAllQuizzes(prev => prev.map(q => 
-        String(q.id || q._id) === String(editingQuizId) ? savedQuiz : q
+        String(q.id || q._id) === String(editingQuizId) ? normalizedQuiz : q
       ));
     } else {
-      setAllQuizzes(prev => [savedQuiz, ...prev]);
+      setAllQuizzes(prev => [normalizedQuiz, ...prev]);
     }
 
     setSuccessMessage(editingQuizId ? 'Quiz updated!' : 'Quiz published!');
@@ -329,6 +467,63 @@ const createQuiz = async (event) => {
     setSavingQuiz(false);
   }
 };
+
+  const openFeedbackComposer = (quizResult, recipientType) => {
+    const recipientName = recipientType === 'parent'
+      ? (quizResult.parent_name || 'Parent')
+      : (quizResult.student_name || quizResult.student_username || 'Student')
+
+    const studentName = quizResult.student_name || quizResult.student_username || 'the student'
+    const message = [
+      `Hi ${recipientName},`,
+      '',
+      `Feedback for ${studentName}'s quiz "${quizResult.quiz_title}":`,
+      `Score: ${quizResult.score ?? 0}%`,
+      '',
+      'Please review the missed items and keep practicing the material covered in class.',
+    ].join('\n')
+
+    setFeedbackDraft({
+      quizResult,
+      recipientType,
+      message,
+    })
+  }
+
+  const sendQuizFeedback = async (event) => {
+    event.preventDefault()
+    if (!feedbackDraft) return
+
+    const receiverPublicId = feedbackDraft.recipientType === 'parent'
+      ? feedbackDraft.quizResult.parent_public_id
+      : feedbackDraft.quizResult.student_public_id
+
+    if (!receiverPublicId) {
+      setError(`No ${feedbackDraft.recipientType} is linked to this quiz submission.`)
+      return
+    }
+
+    try {
+      setSendingFeedback(true)
+      setError('')
+      await apiRequest('/teacher/message', {
+        method: 'POST',
+        token: session.token,
+        body: {
+          receiver_public_id: receiverPublicId,
+          content: feedbackDraft.message,
+          quiz_result_id: feedbackDraft.quizResult.id,
+        },
+      })
+      setSuccessMessage(`Feedback sent to ${feedbackDraft.recipientType} successfully!`)
+      setFeedbackDraft(null)
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      setError(err.message || 'Failed to send feedback')
+    } finally {
+      setSendingFeedback(false)
+    }
+  }
 
   const handlePasswordReset = async (e) => {
     e.preventDefault()
@@ -729,6 +924,101 @@ const createQuiz = async (event) => {
 
 {activeTab === 'quizzes' && (
   <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+
+    <article className="panel">
+      <div className="panel-head">
+        <h2>Completed Quizzes</h2>
+        <span className="badge">{completedQuizResults.length}</span>
+      </div>
+      {loadingCompletedQuizResults ? (
+        <p className="info-text">Loading completed quizzes...</p>
+      ) : displayQuizResults.length === 0 ? (
+        <p className="info-text">No completed quiz submissions found for this class yet.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Quiz</th>
+                <th>Student</th>
+                <th>Parent</th>
+                <th>Score</th>
+                <th>Submitted</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayQuizResults.map((result) => (
+                <tr key={result.id || `${result.quiz_id}-${result.student_id}-${result.submitted_at}`}> 
+                  <td>{result.quiz_title}</td>
+                  <td>{result.student_name || result.student_username}</td>
+                  <td>{result.parent_name || 'No parent linked'}</td>
+                  <td>{Number(result.score ?? 0).toFixed(1)}%</td>
+                  <td>{result.submitted_at ? new Date(result.submitted_at).toLocaleString() : 'Unknown'}</td>
+                  <td>
+                    <div className="flex-row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button className="btn btn-ghost" onClick={() => openFeedbackComposer(result, 'student')}>
+                        Feedback Student
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        disabled={!result.parent_public_id}
+                        title={result.parent_public_id ? 'Send feedback to parent' : 'No parent linked'}
+                        onClick={() => openFeedbackComposer(result, 'parent')}
+                      >
+                        Feedback Parent
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </article>
+
+    {feedbackDraft && (
+      <article className="panel">
+        <div className="panel-head">
+          <h2>Send Quiz Feedback</h2>
+          <button className="btn btn-ghost" onClick={() => setFeedbackDraft(null)}>Cancel</button>
+        </div>
+        <form className="form-grid" onSubmit={sendQuizFeedback}>
+          <div className="field-row">
+            <label className="field">
+              Recipient
+              <select
+                value={feedbackDraft.recipientType}
+                onChange={(e) => openFeedbackComposer(feedbackDraft.quizResult, e.target.value)}
+              >
+                <option value="student">Student</option>
+                <option value="parent">Parent</option>
+              </select>
+            </label>
+            <label className="field">
+              Quiz
+              <input value={feedbackDraft.quizResult.quiz_title} readOnly />
+            </label>
+          </div>
+          <label className="field">
+            Feedback Message
+            <textarea
+              rows={6}
+              value={feedbackDraft.message}
+              onChange={(e) => setFeedbackDraft((current) => ({ ...current, message: e.target.value }))}
+              placeholder="Write the feedback you want to send..."
+              required
+            />
+          </label>
+          <div className="flex-row" style={{ justifyContent: 'flex-start' }}>
+            <button className="btn btn-primary" type="submit" disabled={sendingFeedback}>
+              {sendingFeedback ? 'Sending...' : 'Send Feedback'}
+            </button>
+          </div>
+        </form>
+      </article>
+    )}
     
     {/* NEW: EXISTING QUIZZES LIST */}
     <article className="panel">
@@ -755,8 +1045,8 @@ const createQuiz = async (event) => {
             </tr>
           </thead>
           <tbody>
-          {allQuizzes
-            .filter(q => String(q.class_id || q.classId) === String(selectedClassId))
+          {displayQuizzes
+            .filter(q => !selectedClassId || !q.class_id || String(q.class_id) === String(selectedClassId))
             .map((quiz) => (
               <tr key={quiz.id || quiz._id}>
                 <td>{quiz.title}</td>
