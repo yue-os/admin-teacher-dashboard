@@ -15,7 +15,7 @@ function TeacherDashboard({ session, onLogout }) {
   const [selectedStudent, setSelectedStudent] = useState(null)
 
   const [sessionAnnouncements, setSessionAnnouncements] = useState([])
-  const [sessionQuizzes, setSessionQuizzes] = useState([])
+  const [, setSessionQuizzes] = useState([])
 
   const [chatStudent, setChatStudent] = useState(null)
   const [chatMessage, setChatMessage] = useState('')
@@ -38,34 +38,43 @@ function TeacherDashboard({ session, onLogout }) {
     try {
       setError('')
       setLoading(true)
-      const result = await apiRequest('/teacher/class/overview', {
-        token: session.token,
-      }).catch((err) => {
-        console.warn('Backend is down. Using simulated overview data:', err)
-        return {
-          classes: [
-            { id: 'c1', name: 'Grade 7 - Mabini', grade_level: 'Grade 7', section: 'Mabini' },
-            { id: 'c2', name: 'Grade 8 - Bonifacio', grade_level: 'Grade 8', section: 'Bonifacio' }
-          ],
-          students: [
-            { id: 's1', username: 'Juan Dela Cruz', class_id: 'c1', parent_name: 'Maria Cruz', quizzes: { quiz_avg_score: 85 }, missions: { missions_completed: 4, missions_total: 5 } },
-            { id: 's2', username: 'Ana Santos', class_id: 'c1', parent_name: null, quizzes: { quiz_avg_score: 92 }, missions: { missions_completed: 5, missions_total: 5 } },
-            { id: 's3', username: 'Leo Perez', class_id: 'c2', parent_name: 'Jose Perez', quizzes: { quiz_avg_score: 78 }, missions: { missions_completed: 2, missions_total: 5 } }
-          ],
-          parents: []
+
+      let result
+      try {
+        result = await apiRequest('/teacher/class/overview', {
+          token: session.token,
+        })
+        console.log('Teacher overview API response:', result)
+      } catch (apiErr) {
+        console.warn('Failed to fetch teacher overview, using simulated data:', apiErr)
+        result = {
+          classes: [],
+          students: [],
+          parents: [],
         }
+      }
+
+      const ownedTeacherId = String(session.userId ?? '')
+      const classes = (result.classes || []).filter((classroom) => {
+        if (!ownedTeacherId) return true
+        return String(classroom.teacher_id ?? classroom.teacherId ?? '') === ownedTeacherId
       })
-      setOverview(result)
+
+      setOverview({
+        classes,
+        students: result.students || [],
+        parents: result.parents || [],
+      })
     } catch (err) {
       if (err.status === 401) {
         onLogout()
         return
       }
-      setError(err.message)
+      setError(err.message || 'Failed to load teacher overview')
     } finally {
       setLoading(false)
     }
-  }, [onLogout, session.token])
+  }, [onLogout, session.token, session.userId])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -77,20 +86,26 @@ function TeacherDashboard({ session, onLogout }) {
   const filteredClasses = useMemo(() => {
     if (!overview.classes) return []
     return overview.classes.filter((c) => {
+      if (session.userId && String(c.teacher_id ?? c.teacherId ?? '') !== String(session.userId)) {
+        return false
+      }
       const name = c.name || `${c.grade_level || ''} ${c.section || ''}`
       return name.toLowerCase().includes(searchQuery.toLowerCase())
     })
-  }, [overview.classes, searchQuery])
+  }, [overview.classes, searchQuery, session.userId])
 
   const currentClass = useMemo(() => {
-    return overview.classes?.find((c) => c.id === selectedClassId || c._id === selectedClassId) || null
+    return (
+      overview.classes?.find(
+        (c) => String(c.id ?? c._id) === String(selectedClassId),
+      ) || null
+    )
   }, [overview.classes, selectedClassId])
 
   const classStudents = useMemo(() => {
     if (!currentClass) return []
     return overview.students?.filter((s) =>
-      s.class_id === currentClass.id ||
-      s.class_id === currentClass._id ||
+      String(s.class_id ?? s.classId ?? '') === String(currentClass.id ?? currentClass._id) ||
       s.class_name === currentClass.name ||
       s.class_name === `${currentClass.grade_level} - ${currentClass.section}`
     ) || []

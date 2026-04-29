@@ -32,10 +32,6 @@ function AdminDashboard({ session, onLogout }) {
   const [csvFile, setCsvFile] = useState(null)
   const [csvUploading, setCsvUploading] = useState(false)
 
-  // Class management state
-  const [selectedGrade, setSelectedGrade] = useState('')
-  const [selectedSection, setSelectedSection] = useState('')
-  const [classStudents, setClassStudents] = useState([])
   const [gradeOptions] = useState(['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'])
   const [sectionOptions] = useState(['Section A', 'Section B', 'Section C', 'Section D'])
 
@@ -283,50 +279,6 @@ function AdminDashboard({ session, onLogout }) {
     }
   }
 
-  const loadClassStudents = async () => {
-    if (!selectedGrade || !selectedSection) {
-      setError('Please select both grade level and section')
-      return
-    }
-
-    try {
-      setError('')
-      const result = await apiRequest(
-        `/api/admin/classes/${encodeURIComponent(selectedGrade)}/${encodeURIComponent(selectedSection)}/students`,
-        {
-          token: session.token,
-        },
-      )
-      setClassStudents(result || [])
-    } catch (err) {
-      if (err.status === 401) {
-        onLogout()
-        return
-      }
-      setError(err.message)
-    }
-  }
-
-  const reassignStudent = async (studentId, newGrade, newSection) => {
-    try {
-      setError('')
-      await apiRequest(`/api/admin/users/${studentId}`, {
-        method: 'PATCH',
-        token: session.token,
-        body: { grade_level: newGrade, section: newSection },
-      })
-      await loadClassStudents()
-    } catch (err) {
-      if (err.status === 401) {
-        onLogout()
-        return
-      }
-      setError(err.message)
-    }
-  }
-
-
-
   const handleClassFormChange = (event) => {
     const { name, value } = event.target
     setClassForm((current) => ({ ...current, [name]: value }))
@@ -360,7 +312,7 @@ const createClass = async (event) => {
 
   // 2. Identify selected students
   const selectedStudentIds = Object.entries(selectedStudentsForClass)
-    .filter(([_, selected]) => selected)
+    .filter(([, selected]) => selected)
     .map(([studentId]) => studentId)
 
   if (selectedStudentIds.length === 0) {
@@ -417,17 +369,23 @@ const createClass = async (event) => {
     )
     if (!confirmed) return
 
+    const numericClassId = Number(classId)
+    if (!Number.isInteger(numericClassId) || numericClassId <= 0) {
+      setError('Invalid class ID')
+      return
+    }
+
     try {
       setError('')
       setSuccessMessage('')
 
-      await apiRequest(`/api/admin/classes/${classId}`, {
+      await apiRequest(`/api/admin/classes/${numericClassId}`, {
         method: 'DELETE',
         token: session.token,
       })
 
       setSuccessMessage('Class deleted successfully!')
-      await fetchClasses()
+      await loadData()
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
       if (err.status === 401) {

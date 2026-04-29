@@ -82,4 +82,58 @@ export async function getClassStudents(grade, section, token) {
   )
 }
 
+// Teacher API helpers
+export async function getTeacherClassOverview(token) {
+  return apiRequest('/teacher/class/overview', {
+    token,
+  })
+}
+
+export async function createQuiz(quizData, token) {
+  return apiRequest('/teacher/quiz', {
+    method: 'POST',
+    token,
+    body: quizData,
+  })
+}
+
+export async function createAnnouncement(announcementData, token) {
+  return apiRequest('/teacher/announcement', {
+    method: 'POST',
+    token,
+    body: announcementData,
+  })
+}
+
+export async function sendMessage(messageData, token) {
+  return apiRequest('/teacher/message', {
+    method: 'POST',
+    token,
+    body: messageData,
+  })
+}
+
+// Parent API helpers
+export async function getParentStats(token) {
+  return apiRequest('/parent/stats', {
+    token,
+  })
+}
+
+export async function linkChild(childUsername, token) {
+  return apiRequest('/parent/link_child', {
+    method: 'POST',
+    token,
+    body: { child_username: childUsername },
+  })
+}
+
+export async function unlinkChild(childUsername, token) {
+  return apiRequest('/parent/unlink_child', {
+    method: 'POST',
+    token,
+    body: { child_username: childUsername },
+  })
+}
+
 

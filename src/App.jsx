@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import AdminDashboard from './pages/AdminDashboard'
 import TeacherDashboard from './pages/TeacherDashboard'
+import ParentDashboard from './pages/ParentDashboard'
 import UnauthorizedPage from './pages/UnauthorizedPage'
 import { loginUser } from './lib/api'
 import { clearSession, createSessionFromToken, loadSession, saveSession } from './lib/auth'
@@ -18,6 +19,7 @@ function App() {
   const homePath = useMemo(() => {
     if (session?.role === 'Admin') return '/admin'
     if (session?.role === 'Teacher') return '/teacher'
+    if (session?.role === 'Parent') return '/parent'
     return '/login'
   }, [session])
 
@@ -38,8 +40,8 @@ function App() {
         throw new Error('Invalid login token format.')
       }
 
-      if (!['Admin', 'Teacher'].includes(nextSession.role)) {
-        throw new Error('Only Admin and Teacher accounts can access this dashboard.')
+      if (!['Admin', 'Teacher', 'Parent'].includes(nextSession.role)) {
+        throw new Error('Only Admin, Teacher, and Parent accounts can access this dashboard.')
       }
 
       setSession(nextSession)
@@ -76,6 +78,14 @@ function App() {
         element={
           <ProtectedRoute session={session} allowedRoles={['Teacher']}>
             <TeacherDashboard session={session} onLogout={handleLogout} />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/parent"
+        element={
+          <ProtectedRoute session={session} allowedRoles={['Parent']}>
+            <ParentDashboard session={session} onLogout={handleLogout} />
           </ProtectedRoute>
         }
       />

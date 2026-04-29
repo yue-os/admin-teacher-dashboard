@@ -17,8 +17,8 @@ function LoginPage({ onLogin, isSubmitting, error }) {
     <div className="auth-layout">
       <section className="auth-card">
         <p className="eyebrow">BatangAware</p>
-        <h1>Admin & Teacher Portal</h1>
-        <p className="subtitle">Secure sign-in for education operations dashboards.</p>
+        <h1>BatangAware Portal</h1>
+        <p className="subtitle">Secure sign-in for admin, teacher, and parent dashboards.</p>
 
         <form onSubmit={onSubmit} className="form-grid">
           <label className="field">
