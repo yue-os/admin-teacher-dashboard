@@ -11,6 +11,7 @@ const USER_TEMPLATE = {
   role: 'Student',
   grade_level: '',
   section: '',
+  parent_id: '',
 }
 
 function AdminDashboard({ session, onLogout }) {
@@ -32,9 +33,6 @@ function AdminDashboard({ session, onLogout }) {
   const [csvFile, setCsvFile] = useState(null)
   const [csvUploading, setCsvUploading] = useState(false)
 
-  const [gradeOptions] = useState(['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'])
-  const [sectionOptions] = useState(['Section A', 'Section B', 'Section C', 'Section D'])
-
   // Class creation state
   const [classForm, setClassForm] = useState({
     grade_level: '',
@@ -44,6 +42,9 @@ function AdminDashboard({ session, onLogout }) {
   })
   const [selectedStudentsForClass, setSelectedStudentsForClass] = useState({})
   const [creatingClass, setCreatingClass] = useState(false)
+
+  const [viewingClass, setViewingClass] = useState(null)
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false)
 
   // Student filter state
   const [studentFilterGrade, setStudentFilterGrade] = useState('')
@@ -150,6 +151,7 @@ function AdminDashboard({ session, onLogout }) {
       role: user.role,
       grade_level: user.grade_level || '',
       section: user.section || '',
+      parent_id: user.parent_id || '',
     })
   }
 
@@ -301,67 +303,109 @@ function AdminDashboard({ session, onLogout }) {
     setSelectedStudentsForClass(newSelection)
   }
 
-const createClass = async (event) => {
-  event.preventDefault()
+  const createClass = async (event) => {
+    event.preventDefault()
 
-  // 1. Validation check
-  if (!classForm.grade_level || !classForm.section || !classForm.teacher_id) {
-    setError('Please select grade level, section, and teacher')
-    return
-  }
-
-  // 2. Identify selected students
-  const selectedStudentIds = Object.entries(selectedStudentsForClass)
-    .filter(([, selected]) => selected)
-    .map(([studentId]) => studentId)
-
-  if (selectedStudentIds.length === 0) {
-    setError('Please select at least one student for the class')
-    return
-  }
-
-  try {
-    setCreatingClass(true)
-    setError('')
-    setSuccessMessage('')
-
-    // 3. Combine Grade and Section into a "name" field for the backend
-    const className = `${classForm.grade_level} - ${classForm.section}`
-
-    await apiRequest('/api/admin/classes', {
-      method: 'POST',
-      token: session.token,
-      body: {
-        name: className, // Sending the combined string as 'name'
-        teacher_id: classForm.teacher_id,
-        student_ids: selectedStudentIds,
-      },
-    })
-
-    setSuccessMessage(
-      `Class "${className}" created successfully with ${selectedStudentIds.length} student(s)!`
-    )
-    
-    // Reset state
-    setClassForm({
-      grade_level: '',
-      section: '',
-      teacher_id: '',
-      student_ids: [],
-    })
-    setSelectedStudentsForClass({})
-    await fetchClasses()
-    setTimeout(() => setSuccessMessage(''), 3000)
-  } catch (err) {
-    if (err.status === 401) {
-      onLogout()
+    // 1. Validation check
+    if (!classForm.grade_level || !classForm.section || !classForm.teacher_id) {
+      setError('Please select grade level, section, and teacher')
       return
     }
-    setError(err.message)
-  } finally {
-    setCreatingClass(false)
+
+    // 2. Identify selected students
+    const selectedStudentIds = Object.entries(selectedStudentsForClass)
+      .filter(([, selected]) => selected)
+      .map(([studentId]) => studentId)
+
+    if (selectedStudentIds.length === 0) {
+      setError('Please select at least one student for the class')
+      return
+    }
+
+    try {
+      setCreatingClass(true)
+      setError('')
+      setSuccessMessage('')
+
+      // 3. Combine Grade and Section into a "name" field for the backend
+      const className = `${classForm.grade_level} - ${classForm.section}`
+
+      await apiRequest('/api/admin/classes', {
+        method: 'POST',
+        token: session.token,
+        body: {
+          name: className, // Sending the combined string as 'name'
+          teacher_id: classForm.teacher_id,
+          student_ids: selectedStudentIds,
+        },
+      })
+
+      setSuccessMessage(
+        `Class "${className}" created successfully with ${selectedStudentIds.length} student(s)!`
+      )
+      
+      // Reset state
+      setClassForm({
+        grade_level: '',
+        section: '',
+        teacher_id: '',
+        student_ids: [],
+      })
+      setSelectedStudentsForClass({})
+      await fetchClasses()
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      if (err.status === 401) {
+        onLogout()
+        return
+      }
+      setError(err.message)
+    } finally {
+      setCreatingClass(false)
+    }
   }
-}
+
+  const updateClass = async (e) => {
+    e.preventDefault()
+    try {
+      setSaving(true)
+      setError('')
+
+      const selectedIds = Object.entries(selectedStudentsForClass)
+        .filter(([, selected]) => selected)
+        .map(([id]) => id)
+
+      // Use the combined name from viewingClass to ensure backend finds the record
+      const payload = {
+        name: viewingClass.name,
+        teacher_id: viewingClass.teacher_id || viewingClass.teacherId,
+        student_ids: selectedIds,
+      }
+
+      const response = await apiRequest(`/api/admin/classes/${viewingClass.id || viewingClass._id}`, {
+        method: 'PATCH',
+        token: session.token,
+        body: payload,
+      })
+
+      // Update local state immediately
+      setClasses((prev) =>
+        prev.map((c) =>
+          String(c.id || c._id) === String(viewingClass.id || viewingClass._id) ? response : c,
+        ),
+      )
+
+      setSuccessMessage('Class updated successfully!')
+      setIsViewModalOpen(false)
+
+      // Refresh all data from server to ensure sync
+      await loadData()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const deleteClass = async (classId) => {
     const confirmed = window.confirm(
@@ -514,25 +558,43 @@ const createClass = async (event) => {
                         Grade Level
                         <select name="grade_level" value={form.grade_level} onChange={onFieldChange}>
                           <option value="">Select grade</option>
-                          {gradeOptions.map((grade) => (
-                            <option key={grade} value={grade}>
-                              {grade}
-                            </option>
-                          ))}
+                          <option value="Grade 7">Grade 7</option>
+                          <option value="Grade 8">Grade 8</option>
+                          <option value="Grade 9">Grade 9</option>
+                          <option value="Grade 10">Grade 10</option>
+                          <option value="Grade 11">Grade 11</option>
+                          <option value="Grade 12">Grade 12</option>
                         </select>
                       </label>
                       <label className="field">
                         Section
                         <select name="section" value={form.section} onChange={onFieldChange}>
                           <option value="">Select section</option>
-                          {sectionOptions.map((section) => (
-                            <option key={section} value={section}>
-                              {section}
-                            </option>
-                          ))}
+                          <option value="Section A">Section A</option>
+                          <option value="Section B">Section B</option>
+                          <option value="Section C">Section C</option>
+                          <option value="Section D">Section D</option>
                         </select>
                       </label>
                     </div>
+                  )}
+
+                  {form.role === 'Student' && (
+                    <label className="field">
+                      Link Parent (Optional)
+                      <select 
+                        name="parent_id" 
+                        value={form.parent_id || ''} 
+                        onChange={onFieldChange}
+                      >
+                        <option value="">No Parent</option>
+                        {users.filter(u => u.role === 'Parent').map(parent => (
+                          <option key={parent.id} value={parent.id}>
+                            {parent.first_name} {parent.last_name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   )}
 
                   <button className="btn btn-primary" type="submit" disabled={saving}>
@@ -637,64 +699,58 @@ const createClass = async (event) => {
                     <h2>Create New Class</h2>
                   </div>
 
-                  <form className="form-grid" onSubmit={createClass}>
-                    <div className="field-row">
-                      <label className="field">
-                        Grade Level
-                        <select
-                          name="grade_level"
-                          value={classForm.grade_level}
-                          onChange={handleClassFormChange}
-                          required
-                        >
-                          <option value="">Select grade</option>
-                          {gradeOptions.map((grade) => (
-                            <option key={grade} value={grade}>
-                              {grade}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label className="field">
-                        Section
-                        <select
-                          name="section"
-                          value={classForm.section}
-                          onChange={handleClassFormChange}
-                          required
-                        >
-                          <option value="">Select section</option>
-                          {sectionOptions.map((section) => (
-                            <option key={section} value={section}>
-                              {section}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-
+                <form className="form-grid" onSubmit={createClass}>
+                  <div className="field-row">
                     <label className="field">
-                      Assign Teacher
-                      <select
-                        name="teacher_id"
-                        value={classForm.teacher_id}
+                      Grade Level
+                      {/* Changed from <select> to <input> */}
+                      <input
+                        name="grade_level"
+                        type="text"
+                        placeholder="e.g., Grade 7"
+                        className="field"
+                        value={classForm.grade_level}
                         onChange={handleClassFormChange}
                         required
-                      >
-                        <option value="">Select a teacher</option>
-                        {teachers.map((teacher) => (
-                          <option key={teacher.id} value={teacher.id}>
-                            {`${teacher.first_name} ${teacher.last_name}`}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </label>
 
-                    <button className="btn btn-primary" type="submit" disabled={creatingClass}>
-                      {creatingClass ? 'Creating...' : 'Create Class'}
-                    </button>
-                  </form>
+                    <label className="field">
+                      Section
+                      {/* Changed from <select> to <input> */}
+                      <input
+                        name="section"
+                        type="text"
+                        placeholder="e.g., Mabini"
+                        className="field"
+                        value={classForm.section}
+                        onChange={handleClassFormChange}
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <label className="field">
+                    Assign Teacher
+                    <select
+                      name="teacher_id"
+                      value={classForm.teacher_id}
+                      onChange={handleClassFormChange}
+                      required
+                    >
+                      <option value="">Select a teacher</option>
+                      {teachers.map((teacher) => (
+                        <option key={teacher.id} value={teacher.id}>
+                          {`${teacher.first_name} ${teacher.last_name}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <button className="btn btn-primary" type="submit" disabled={creatingClass}>
+                    {creatingClass ? 'Creating...' : 'Create Class'}
+                  </button>
+                </form>
                 </article>
 
                 <article className="panel">
@@ -704,31 +760,21 @@ const createClass = async (event) => {
                     <div className="field-row">
                       <label className="field">
                         Filter by Grade
-                        <select
+                        <input
+                          type="text"
+                          placeholder="Type grade..."
                           value={studentFilterGrade}
                           onChange={(e) => setStudentFilterGrade(e.target.value)}
-                        >
-                          <option value="">All Grades</option>
-                          {gradeOptions.map((grade) => (
-                            <option key={grade} value={grade}>
-                              {grade}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </label>
                       <label className="field">
                         Filter by Section
-                        <select
+                        <input
+                          type="text"
+                          placeholder="Type section..."
                           value={studentFilterSection}
                           onChange={(e) => setStudentFilterSection(e.target.value)}
-                        >
-                          <option value="">All Sections</option>
-                          {sectionOptions.map((section) => (
-                            <option key={section} value={section}>
-                              {section}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </label>
                     </div>
                   </div>
@@ -809,6 +855,24 @@ const createClass = async (event) => {
                               <td>{cls.student_count || cls.students?.length || 0}</td>
                               <td className="actions-cell">
                                 <button
+                                  className="btn btn-ghost"
+                                  type="button"
+                                  onClick={() => {
+                                    setViewingClass(cls);
+                                    const initialSelected = {};
+                                    users.forEach(u => {
+                                      if (u.role === 'Student' && (u.class_id === (cls.id || cls._id) || (u.grade_level === cls.grade_level && u.section === cls.section))) {
+                                        initialSelected[u.id] = true;
+                                      }
+                                    });
+                                    setSelectedStudentsForClass(initialSelected);
+                                    setIsViewModalOpen(true);
+                                  }}
+                                  style={{ marginRight: '8px' }}
+                                >
+                                  View/Edit
+                                </button>
+                                <button
                                   className="btn btn-danger"
                                   type="button"
                                   onClick={() => deleteClass(cls.id || cls._id)}
@@ -827,6 +891,132 @@ const createClass = async (event) => {
             </>
           )}
 
+          {isViewModalOpen && viewingClass && (
+            <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+              <article className="panel" style={{ width: '95%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div className="panel-head">
+                  <h2 style={{ margin: 0 }}>Edit Class: {viewingClass.name || `${viewingClass.grade_level} - ${viewingClass.section}`}</h2>
+                  <button className="btn btn-ghost" type="button" onClick={() => setIsViewModalOpen(false)}>✕ Close</button>
+                </div>
+          
+                <form onSubmit={updateClass}>
+                  {/* SECTION 1: CHANGE TEACHER */}
+                  <div className="field-row" style={{ marginBottom: '2rem', marginTop: '1.5rem' }}>
+                    <label className="field">
+                      Assigned Teacher
+                      <select 
+                        value={viewingClass.teacher_id || viewingClass.teacherId || ''} 
+                        onChange={(e) => setViewingClass({
+                          ...viewingClass, 
+                          teacher_id: e.target.value,
+                          teacherId: e.target.value // Update both to be safe
+                        })}
+                      >
+                        <option value="">Select a teacher</option>
+                        {teachers.map(t => (
+                          <option key={t.id} value={t.id}>{t.first_name} {t.last_name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+          
+                  {/* SECTION 2: STUDENT MANAGEMENT */}
+                  <h3>Class Members & Linked Parents</h3>
+                  <p className="info-text">Uncheck a student to remove them, or use the selection list below to add more.</p>
+                  
+                  <div className="table-wrap" style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '1rem' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Member</th>
+                          <th>Linked Parent</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {users.filter(u => u.role === 'Student').map(student => {
+                          const isMember = selectedStudentsForClass[student.id];
+                          if (!isMember) return null;
+
+                          // Try to find the linked parent
+                          const linkedParent = users.find(p => {
+                            if (p.role !== 'Parent') return false;
+
+                            // Match by parent_id first (most reliable)
+                            if (student.parent_id && String(p.id) === String(student.parent_id)) {
+                              return true
+                            }
+
+                            // Match by parent_name as fallback
+                            if (student.parent_name && p.username === student.parent_name) {
+                              return true
+                            }
+
+                            return false
+                          });
+
+                          const parentDisplay = linkedParent
+                            ? `${linkedParent.first_name} ${linkedParent.last_name}`
+                            : student.parent_name || 'No parent linked'
+
+                          return (
+                            <tr key={student.id}>
+                              <td>{student.first_name} {student.last_name}</td>
+                              <td style={{ color: linkedParent ? 'inherit' : '#999' }}>
+                                {parentDisplay}
+                              </td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="btn btn-danger"
+                                  style={{ padding: '2px 8px', fontSize: '0.7rem' }}
+                                  onClick={() => handleStudentSelection(student.id)}
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {Object.values(selectedStudentsForClass).filter(Boolean).length === 0 && (
+                          <tr><td colSpan={3} style={{ textAlign: 'center', padding: '1rem' }}>No students selected for this class.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+          
+                  <div className="add-students-area" style={{ marginTop: '1.5rem', border: '1px solid #eee', padding: '1rem', marginBottom: '2rem' }}>
+                    <h4 style={{ marginTop: 0 }}>Add More Students</h4>
+                    <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                      {users
+                        .filter(u => u.role === 'Student' && !selectedStudentsForClass[u.id])
+                        .map(student => (
+                          <label key={student.id} className="student-checkbox" style={{ display: 'block', padding: '5px', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={false}
+                              onChange={() => handleStudentSelection(student.id)}
+                              style={{ marginRight: '0.5rem' }}
+                            />
+                            {student.first_name} {student.last_name}
+                            {student.grade_level && ` (${student.grade_level} - ${student.section})`}
+                          </label>
+                        ))}
+                      {users.filter(u => u.role === 'Student' && !selectedStudentsForClass[u.id]).length === 0 && (
+                        <p className="info-text" style={{ margin: 0 }}>No more students available to add.</p>
+                      )}
+                    </div>
+                  </div>
+          
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                    <button className="btn btn-primary" type="submit" disabled={saving}>
+                      {saving ? 'Saving Changes...' : 'Save Class Updates'}
+                    </button>
+                  </div>
+                </form>
+              </article>
+            </div>
+          )}
 
         </>
       )}

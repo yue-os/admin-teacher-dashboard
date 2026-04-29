@@ -10,6 +10,7 @@ function ParentDashboard({ session, onLogout }) {
   const [childUsername, setChildUsername] = useState('')
   const [linking, setLinking] = useState(false)
   const [selectedChildUsername, setSelectedChildUsername] = useState('')
+  const [activeTab, setActiveTab] = useState('overview')
 
   const loadStats = useCallback(async () => {
     try {
@@ -123,6 +124,43 @@ function ParentDashboard({ session, onLogout }) {
         <p>Loading parent dashboard...</p>
       ) : (
         <>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+            <button 
+              className={`btn ${activeTab === 'profile' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setActiveTab(activeTab === 'profile' ? 'overview' : 'profile')}
+            >
+              👤 My Profile
+            </button>
+          </div>
+
+          {activeTab === 'profile' ? (
+            <section className="two-col">
+              <article className="panel">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                  <h2>Account Information</h2>
+                  <button className="btn btn-danger" onClick={onLogout}>Log out</button>
+                </div>
+                <p><strong>Username:</strong> {session.username}</p>
+                <p><strong>Full Name:</strong> {session.firstName} {session.lastName}</p>
+                <div>
+                  <strong>Children Linked:</strong>
+                  <ul>
+                    {childrenStats.map(child => <li key={child.child}>{child.child}</li>)}
+                  </ul>
+                </div>
+              </article>
+
+              <article className="panel">
+                <h2>Reset Password</h2>
+                <form className="form-grid" onSubmit={(e) => e.preventDefault()}>
+                  <label className="field">Current Password <input type="password" required /></label>
+                  <label className="field">New Password <input type="password" required /></label>
+                  <button className="btn btn-primary" type="submit">Reset Password</button>
+                </form>
+              </article>
+            </section>
+          ) : (
+            <>
           <section className="cards-grid" style={{ marginBottom: '1.5rem' }}>
             {summaryCards.map((card) => (
               <article key={card.label} className="metric-card">
@@ -271,6 +309,8 @@ function ParentDashboard({ session, onLogout }) {
               )}
             </article>
           </section>
+            </>
+          )}
         </>
       )}
     </DashboardShell>

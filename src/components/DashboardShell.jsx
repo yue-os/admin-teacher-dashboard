@@ -9,11 +9,14 @@ function DashboardShell({ title, subtitle, role, username, onLogout, children })
         </div>
         <div className="header-meta">
           <p>
-            Signed in as <strong>{username || role}</strong>
+            Signed in as <strong>{username}</strong>
           </p>
-          <button className="btn btn-secondary" type="button" onClick={onLogout}>
-            Log out
-          </button>
+          {/* ONLY show logout in header if the user is an Admin */}
+          {role === 'Admin' && (
+            <button className="btn btn-secondary" type="button" onClick={onLogout}>
+              Log out
+            </button>
+          )}
         </div>
       </header>
       <main>{children}</main>

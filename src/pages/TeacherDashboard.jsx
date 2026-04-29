@@ -28,6 +28,49 @@ function TeacherDashboard({ session, onLogout }) {
   const [quizQuestions, setQuizQuestions] = useState([])
   const [activeQuestionId, setActiveQuestionId] = useState(null)
 
+const [allQuizzes, setAllQuizzes] = useState([]); // List for existing quizzes
+const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are editing an old quiz
+
+
+  const fetchQuizzes = useCallback(async () => {
+    try {
+      const result = await apiRequest('/teacher/quizzes', {
+        token: session.token,
+      });
+      setAllQuizzes(result || []);
+    } catch (err) {
+      console.error("Failed to fetch quizzes", err);
+    }
+  }, [session.token]);
+
+  // Update your loadOverview useEffect or add a new one:
+  useEffect(() => {
+    if (selectedClassId) {
+      fetchQuizzes();
+    }
+  }, [selectedClassId, fetchQuizzes]);
+
+      const loadQuizForEdit = (quiz) => {
+    setEditingQuizId(quiz.id || quiz._id);
+    setQuizForm({
+      title: quiz.title,
+      timer_seconds: quiz.timer_seconds,
+      start_date: quiz.start_date ? quiz.start_date.substring(0, 16) : '' // Formats for datetime-local
+    });
+    setQuizQuestions(quiz.questions || []);
+    setActiveQuestionId(quiz.questions?.[0]?.id || null);
+    
+    // Smooth scroll to the editor area
+    window.scrollTo({ top: 400, behavior: 'smooth' });
+  };
+
+  const [profileForm, setProfileForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  })
+  const [updatingProfile, setUpdatingProfile] = useState(false)
+
   const SMART_SUGGESTIONS = [
     "Your child is doing well in quizzes.",
     "Your child needs improvement in recent activities.",
@@ -255,20 +298,20 @@ function TeacherDashboard({ session, onLogout }) {
         payload.start_date = new Date(quizForm.start_date).toISOString()
       }
 
-      await apiRequest('/teacher/quiz', {
-        method: 'POST',
+      const method = editingQuizId ? 'PATCH' : 'POST';
+      const endpoint = editingQuizId ? `/teacher/quiz/${editingQuizId}` : '/teacher/quiz';
+
+      await apiRequest(endpoint, {
+        method,
         token: session.token,
         body: payload,
       })
 
-      setSessionQuizzes((prev) => [
-        { ...payload, date: new Date().toLocaleDateString() },
-        ...prev,
-      ])
-
+      setSuccessMessage(editingQuizId ? 'Quiz updated and re-uploaded!' : 'Quiz published!');
+      setEditingQuizId(null);
       setQuizForm({ title: '', timer_seconds: 300, start_date: '' })
       setQuizQuestions([])
-      setSuccessMessage('Quiz created and assigned to class successfully!')
+      fetchQuizzes() // Refresh the list
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
       if (err.status === 401) {
@@ -281,13 +324,46 @@ function TeacherDashboard({ session, onLogout }) {
     }
   }
 
+  const handlePasswordReset = async (e) => {
+    e.preventDefault()
+    
+    if (profileForm.newPassword !== profileForm.confirmPassword) {
+      setError("New passwords do not match.")
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    try {
+      setUpdatingProfile(true)
+      setError('')
+      setSuccessMessage('')
+
+      await apiRequest('/api/user/reset-password', {
+        method: 'POST',
+        token: session.token,
+        body: {
+          current_password: profileForm.currentPassword,
+          new_password: profileForm.newPassword
+        },
+      })
+
+      setSuccessMessage('Password updated successfully!')
+      setProfileForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      setError(err.message || 'Failed to update password')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } finally {
+      setUpdatingProfile(false)
+    }
+  }
+
   return (
     <DashboardShell
       title="Teacher Dashboard"
       subtitle="Track class performance and manage daily classroom operations."
       role={session.role}
       username={session.username}
-      onLogout={onLogout}
     >
       {error && <p className="error-text panel">{error}</p>}
       {successMessage && <p className="success-text panel">{successMessage}</p>}
@@ -296,6 +372,17 @@ function TeacherDashboard({ session, onLogout }) {
         <p>Loading classroom overview...</p>
       ) : (
         <>
+          {/* Top Right Header Section - Only My Profile button */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem', marginBottom: '1rem' }}>
+            <button 
+              className={`btn ${activeTab === 'profile' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setActiveTab('profile')}
+              style={{ padding: '0.5rem 1.5rem', fontWeight: 'bold' }}
+            >
+              👤 My Profile
+            </button>
+          </div>
+
           {/* TOP BAR - GLOBAL CLASS CONTROLS */}
           <header className="panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', padding: '1rem 2rem', gap: '1rem', flexWrap: 'wrap' }}>
             <div style={{ flexShrink: 0 }}>
@@ -338,7 +425,50 @@ function TeacherDashboard({ session, onLogout }) {
             </div>
           </header>
 
-          {!selectedClassId ? (
+          <nav className="tabs">
+            <button disabled={!selectedClassId} className={`tab ${activeTab === 'students' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('students')}>Students & Parents</button>
+            <button disabled={!selectedClassId} className={`tab ${activeTab === 'parents' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('parents')}>Messages</button>
+            <button disabled={!selectedClassId} className={`tab ${activeTab === 'announcements' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('announcements')}>Announcements</button>
+            <button disabled={!selectedClassId} className={`tab ${activeTab === 'quizzes' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('quizzes')}>Quizzes</button>
+            <button disabled={!selectedClassId} className={`tab ${activeTab === 'analytics' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('analytics')}>Analytics</button>
+          </nav>
+
+          {activeTab === 'profile' ? (
+          <section className="two-col">
+            <article className="panel">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h2>Account Information</h2>
+                <button className="btn btn-danger" onClick={onLogout}>Log out</button>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <p><strong>Username:</strong> {session.username}</p>
+                <p><strong>Full Name:</strong> {session.firstName} {session.lastName}</p>
+                <div>
+                  <strong>Classes Assigned:</strong>
+                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '5px' }}>
+                    {overview.classes.map(cls => (
+                      <span key={cls.id || cls._id} className="badge">{cls.name || `${cls.grade_level} - ${cls.section}`}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article className="panel">
+              <h2>Security & Reset Password</h2>
+              
+              <form className="form-grid" onSubmit={handlePasswordReset}>
+                <label className="field">Current Password <input type="password" value={profileForm.currentPassword} onChange={(e) => setProfileForm({...profileForm, currentPassword: e.target.value})} required /></label>
+                <label className="field">New Password <input type="password" value={profileForm.newPassword} onChange={(e) => setProfileForm({...profileForm, newPassword: e.target.value})} minLength={6} required /></label>
+                <button className="btn btn-primary" type="submit" disabled={updatingProfile}>
+                  {updatingProfile ? 'Updating...' : 'Update Password'}
+                </button>
+              </form>
+            </article>
+          </section>
+
+          ) : !selectedClassId ? (
             <>
               <section className="panel center-card" style={{ marginBottom: '2rem' }}>
                 <h2>Welcome to your Teacher Dashboard</h2>
@@ -360,14 +490,6 @@ function TeacherDashboard({ session, onLogout }) {
             </>
           ) : (
             <>
-              <nav className="tabs">
-                <button className={`tab ${activeTab === 'students' ? 'active' : ''}`} onClick={() => setActiveTab('students')}>Students & Parents</button>
-                <button className={`tab ${activeTab === 'parents' ? 'active' : ''}`} onClick={() => setActiveTab('parents')}>Messages</button>
-                <button className={`tab ${activeTab === 'announcements' ? 'active' : ''}`} onClick={() => setActiveTab('announcements')}>Announcements</button>
-                <button className={`tab ${activeTab === 'quizzes' ? 'active' : ''}`} onClick={() => setActiveTab('quizzes')}>Quizzes</button>
-                <button className={`tab ${activeTab === 'analytics' ? 'active' : ''}`} onClick={() => setActiveTab('analytics')}>Analytics</button>
-              </nav>
-
               {activeTab === 'analytics' && (
                 <section className="panel">
                   <h2>Class Performance Analytics</h2>
@@ -597,82 +719,131 @@ function TeacherDashboard({ session, onLogout }) {
                 </section>
               )}
 
-{activeTab === 'quizzes' && (
-  <section className="quiz-builder-container" style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '2rem', alignItems: 'start' }}>
-    
-    {/* LEFT PANEL: Question List (Sidebar) */}
-    <aside className="panel" style={{ position: 'sticky', top: '2rem', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-      <div className="panel-head">
-        <h2>Quiz Questions</h2>
-        <span className="badge">{quizQuestions.length}</span>
-      </div>
+{/* ... other tabs (analytics, students, etc) ... */}
 
-      <div style={{ overflowY: 'auto', flexGrow: 1, paddingRight: '0.5rem' }}>
-        {quizQuestions.length === 0 ? (
-          <p className="info-text">No questions yet.</p>
-        ) : (
-          quizQuestions.map((q, index) => (
-            <div 
-              key={q.id}
-              onClick={() => setActiveQuestionId(q.id)}
-              style={{
-                padding: '1rem',
-                background: activeQuestionId === q.id ? 'var(--bg-hover, #f0f4ff)' : '#fff',
-                border: activeQuestionId === q.id ? '2px solid var(--primary)' : '1px solid #e2e8f0',
-                borderRadius: '8px',
-                marginBottom: '0.75rem',
-                cursor: 'pointer',
-                position: 'relative'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <strong style={{ fontSize: '0.9rem' }}>{index + 1}. {q.text || 'Untitled Question'}</strong>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); removeQuestion(q.id); }}
-                  style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer' }}
-                >✕</button>
-              </div>
-              <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.7rem', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>
-                  {q.type === 'multiple_choice' ? 'MCQ' : 'ID'}
-                </span>
-                <span style={{ fontSize: '0.7rem', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>
-                  {q.points || 1} pts
-                </span>
-              </div>
-            </div>
-          ))
+{activeTab === 'quizzes' && (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+    
+    {/* NEW: EXISTING QUIZZES LIST */}
+    <article className="panel">
+      <div className="panel-head">
+        <h2>Manage Published Quizzes</h2>
+        {editingQuizId && (
+          <button className="btn btn-ghost" onClick={() => {
+            setEditingQuizId(null);
+            setQuizForm({ title: '', timer_seconds: 300, start_date: '' });
+            setQuizQuestions([]);
+          }}>
+            + Create New Instead
+          </button>
         )}
       </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Questions</th>
+              <th>Start Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {allQuizzes.filter(q => String(q.class_id) === String(selectedClassId)).map((quiz) => (
+              <tr key={quiz.id || quiz._id}>
+                <td>{quiz.title}</td>
+                <td>{quiz.questions?.length || 0}</td>
+                <td>{quiz.start_date ? new Date(quiz.start_date).toLocaleDateString() : 'No date set'}</td>
+                <td>
+                  <button className="btn btn-ghost" onClick={() => loadQuizForEdit(quiz)}>
+                    ✏️ Edit & Re-upload
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {allQuizzes.filter(q => String(q.class_id) === String(selectedClassId)).length === 0 && (
+              <tr><td colSpan={4} className="info-text" style={{ textAlign: 'center' }}>No quizzes found for this class.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </article>
 
-      <button 
-        className="btn btn-ghost" 
-        onClick={addQuestion}
-        style={{ marginTop: '1rem', border: '2px dashed #cbd5e1', width: '100%' }}
-      >
-        + Add Question
-      </button>
-    </aside>
-
-    {/* RIGHT PANEL: Question Editor & Quiz Settings */}
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    {/* QUIZ BUILDER SECTION */}
+    <section className="quiz-builder-container" style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '2rem', alignItems: 'start' }}>
       
-      {/* Quiz Global Settings */}
-      <article className="panel">
-        <h2>Quiz Details</h2>
-        <div className="form-grid">
-          <label className="field">
-            Quiz Title
-            <input name="title" value={quizForm.title} onChange={onQuizChange} placeholder="e.g. Science Review - Week 4" required />
-          </label>
-          <div className="field-row">
-            <label className="field">Timer (s)</label>
-            <input name="timer_seconds" type="number" value={quizForm.timer_seconds} onChange={onQuizChange} />
-            <label className="field">Start Date</label>
-            <input name="start_date" type="datetime-local" value={quizForm.start_date} onChange={onQuizChange} />
-          </div>
+      {/* LEFT PANEL: Question List (Sidebar) */}
+      <aside className="panel" style={{ position: 'sticky', top: '2rem', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="panel-head">
+          <h2>Quiz Questions</h2>
+          <span className="badge">{quizQuestions.length}</span>
         </div>
-      </article>
+
+        <div style={{ overflowY: 'auto', flexGrow: 1, paddingRight: '0.5rem' }}>
+          {quizQuestions.length === 0 ? (
+            <p className="info-text">No questions yet.</p>
+          ) : (
+            quizQuestions.map((q, index) => (
+              <div 
+                key={q.id}
+                onClick={() => setActiveQuestionId(q.id)}
+                style={{
+                  padding: '1rem',
+                  background: activeQuestionId === q.id ? 'var(--bg-hover, #f0f4ff)' : '#fff',
+                  border: activeQuestionId === q.id ? '2px solid var(--primary)' : '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  marginBottom: '0.75rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong style={{ fontSize: '0.9rem' }}>{index + 1}. {q.text || 'Untitled Question'}</strong>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); removeQuestion(q.id); }}
+                    style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer' }}
+                  >✕</button>
+                </div>
+                <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '0.7rem', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>
+                    {q.type === 'multiple_choice' ? 'MCQ' : 'ID'}
+                  </span>
+                  <span style={{ fontSize: '0.7rem', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>
+                    {q.points || 1} pts
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <button 
+          className="btn btn-ghost" 
+          onClick={addQuestion}
+          style={{ marginTop: '1rem', border: '2px dashed #cbd5e1', width: '100%' }}
+        >
+          + Add Question
+        </button>
+      </aside>
+
+      {/* RIGHT PANEL: Question Editor & Quiz Settings */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        
+        {/* Quiz Global Settings */}
+        <article className="panel">
+          <h2>Quiz Details</h2>
+          <div className="form-grid">
+            <label className="field">
+              Quiz Title
+              <input name="title" value={quizForm.title} onChange={onQuizChange} placeholder="e.g. Science Review - Week 4" required />
+            </label>
+            <div className="field-row">
+              <label className="field">Timer (s)</label>
+              <input name="timer_seconds" type="number" value={quizForm.timer_seconds} onChange={onQuizChange} />
+              <label className="field">Start Date</label>
+              <input name="start_date" type="datetime-local" value={quizForm.start_date} onChange={onQuizChange} />
+            </div>
+          </div>
+        </article>
 
         {/* Dynamic Question Editor */}
         <article className="panel" style={{ minHeight: '400px' }}>
@@ -765,13 +936,14 @@ function TeacherDashboard({ session, onLogout }) {
         </button>
       </div>
     </section>
-  )}
+  </div>
+)}
             </>
           )}
         </>
       )}
     </DashboardShell>
-  )
+  );
 }
 
-export default TeacherDashboard
+export default TeacherDashboard;
