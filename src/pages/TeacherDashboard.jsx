@@ -274,55 +274,61 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     )
   }
 
-  const createQuiz = async (event) => {
-    event.preventDefault()
+const createQuiz = async (event) => {
+  event.preventDefault();
 
-    if (quizQuestions.length === 0) {
-      setError('Please add at least one question to the quiz before publishing.')
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      return
-    }
-
-    try {
-      setSavingQuiz(true)
-      setError('')
-
-      const payload = {
-        title: quizForm.title,
-        timer_seconds: Number(quizForm.timer_seconds),
-        class_id: selectedClassId,
-        questions: quizQuestions,
-      }
-
-      if (quizForm.start_date) {
-        payload.start_date = new Date(quizForm.start_date).toISOString()
-      }
-
-      const method = editingQuizId ? 'PATCH' : 'POST';
-      const endpoint = editingQuizId ? `/teacher/quiz/${editingQuizId}` : '/teacher/quiz';
-
-      await apiRequest(endpoint, {
-        method,
-        token: session.token,
-        body: payload,
-      })
-
-      setSuccessMessage(editingQuizId ? 'Quiz updated and re-uploaded!' : 'Quiz published!');
-      setEditingQuizId(null);
-      setQuizForm({ title: '', timer_seconds: 300, start_date: '' })
-      setQuizQuestions([])
-      fetchQuizzes() // Refresh the list
-      setTimeout(() => setSuccessMessage(''), 3000)
-    } catch (err) {
-      if (err.status === 401) {
-        onLogout()
-        return
-      }
-      setError(err.message)
-    } finally {
-      setSavingQuiz(false)
-    }
+  if (quizQuestions.length === 0) {
+    setError('Please add at least one question to the quiz before publishing.');
+    return;
   }
+
+  try {
+    setSavingQuiz(true);
+    setError('');
+
+    // 1. DEFINE the payload here
+    const payload = {
+      title: quizForm.title,
+      timer_seconds: Number(quizForm.timer_seconds),
+      class_id: selectedClassId,
+      questions: quizQuestions,
+    };
+
+    // Add start_date only if it exists
+    if (quizForm.start_date) {
+      payload.start_date = new Date(quizForm.start_date).toISOString();
+    }
+
+    const method = editingQuizId ? 'PATCH' : 'POST';
+    const endpoint = editingQuizId ? `/teacher/quiz/${editingQuizId}` : '/teacher/quiz';
+
+    // 2. Now 'payload' is defined and can be used
+    const savedQuiz = await apiRequest(endpoint, {
+      method,
+      token: session.token,
+      body: payload, 
+    });
+
+    // Update local state list
+    if (editingQuizId) {
+      setAllQuizzes(prev => prev.map(q => 
+        String(q.id || q._id) === String(editingQuizId) ? savedQuiz : q
+      ));
+    } else {
+      setAllQuizzes(prev => [savedQuiz, ...prev]);
+    }
+
+    setSuccessMessage(editingQuizId ? 'Quiz updated!' : 'Quiz published!');
+    setEditingQuizId(null);
+    setQuizForm({ title: '', timer_seconds: 300, start_date: '' });
+    setQuizQuestions([]);
+    
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setSavingQuiz(false);
+  }
+};
 
   const handlePasswordReset = async (e) => {
     e.preventDefault()
@@ -749,7 +755,9 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
             </tr>
           </thead>
           <tbody>
-            {allQuizzes.filter(q => String(q.class_id) === String(selectedClassId)).map((quiz) => (
+          {allQuizzes
+            .filter(q => String(q.class_id || q.classId) === String(selectedClassId))
+            .map((quiz) => (
               <tr key={quiz.id || quiz._id}>
                 <td>{quiz.title}</td>
                 <td>{quiz.questions?.length || 0}</td>
@@ -761,10 +769,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
                 </td>
               </tr>
             ))}
-            {allQuizzes.filter(q => String(q.class_id) === String(selectedClassId)).length === 0 && (
-              <tr><td colSpan={4} className="info-text" style={{ textAlign: 'center' }}>No quizzes found for this class.</td></tr>
-            )}
-          </tbody>
+        </tbody>
         </table>
       </div>
     </article>
