@@ -34,3 +34,52 @@ export async function loginUser(username, password) {
     body: { username, password },
   })
 }
+
+// Admin API helpers
+export async function createUser(userData, token) {
+  return apiRequest('/api/admin/users', {
+    method: 'POST',
+    token,
+    body: userData,
+  })
+}
+
+export async function bulkCreateUsers(users, token) {
+  return apiRequest('/api/admin/users/bulk-create', {
+    method: 'POST',
+    token,
+    body: { users },
+  })
+}
+
+export async function getClasses(token) {
+  return apiRequest('/api/admin/classes', {
+    token,
+  })
+}
+
+export async function createClass(classData, token) {
+  return apiRequest('/api/admin/classes', {
+    method: 'POST',
+    token,
+    body: classData,
+  })
+}
+
+export async function deleteClass(classId, token) {
+  return apiRequest(`/api/admin/classes/${classId}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export async function getClassStudents(grade, section, token) {
+  return apiRequest(
+    `/api/admin/classes/${encodeURIComponent(grade)}/${encodeURIComponent(section)}/students`,
+    {
+      token,
+    },
+  )
+}
+
+
