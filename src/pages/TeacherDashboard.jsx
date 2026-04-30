@@ -30,6 +30,7 @@ function TeacherDashboard({ session, onLogout }) {
   const [loadingCompletedQuizResults, setLoadingCompletedQuizResults] = useState(false)
   const [feedbackDraft, setFeedbackDraft] = useState(null)
   const [sendingFeedback, setSendingFeedback] = useState(false)
+  const [retakeQuiz, setRetakeQuiz] = useState(null)
 
 const [allQuizzes, setAllQuizzes] = useState([]); // List for existing quizzes
 const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are editing an old quiz
@@ -507,9 +508,7 @@ const createQuiz = async (event) => {
 };
 
   const openFeedbackComposer = (quizResult, recipientType) => {
-    const recipientName = recipientType === 'parent'
-      ? (quizResult.parent_name || 'Parent')
-      : (quizResult.student_name || quizResult.student_username || 'Student')
+    const recipientName = quizResult.student_name || quizResult.student_username || 'Student'
 
     const studentName = quizResult.student_name || quizResult.student_username || 'the student'
     const message = [
@@ -523,7 +522,7 @@ const createQuiz = async (event) => {
 
     setFeedbackDraft({
       quizResult,
-      recipientType,
+      recipientType: 'student',
       message,
     })
   }
@@ -532,12 +531,10 @@ const createQuiz = async (event) => {
     event.preventDefault()
     if (!feedbackDraft) return
 
-    const receiverPublicId = feedbackDraft.recipientType === 'parent'
-      ? feedbackDraft.quizResult.parent_public_id
-      : feedbackDraft.quizResult.student_public_id
+    const receiverPublicId = feedbackDraft.quizResult.student_public_id
 
     if (!receiverPublicId) {
-      setError(`No ${feedbackDraft.recipientType} is linked to this quiz submission.`)
+      setError('No student account is linked to this quiz submission.')
       return
     }
 
@@ -553,13 +550,84 @@ const createQuiz = async (event) => {
           quiz_result_id: feedbackDraft.quizResult.id,
         },
       })
-      setSuccessMessage(`Feedback sent to ${feedbackDraft.recipientType} successfully!`)
+      setSuccessMessage('Feedback sent to student successfully!')
       setFeedbackDraft(null)
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
       setError(err.message || 'Failed to send feedback')
     } finally {
       setSendingFeedback(false)
+    }
+  }
+
+  const allowQuizRetake = async (quizResult) => {
+    const quizId = quizResult.quiz_id || quizResult.id
+    const studentId = quizResult.student_id
+
+    if (!quizId || !studentId) {
+      setError('Missing quiz or student ID for retake.')
+      return
+    }
+
+    const confirmed = window.confirm(`Allow ${quizResult.student_name || quizResult.student_username || 'this student'} to retake "${quizResult.quiz_title || 'this quiz'}"? Their previous score will be cleared.`)
+    if (!confirmed) return
+
+    try {
+      setError('')
+      setSuccessMessage('')
+      await apiRequest(`/teacher/quiz/${quizId}/retake`, {
+        method: 'POST',
+        token: session.token,
+        body: { student_id: studentId },
+      })
+
+      setCompletedQuizResults((current) =>
+        current.filter((result) => !(String(result.quiz_id) === String(quizId) && String(result.student_id) === String(studentId))),
+      )
+      setSuccessMessage('Student can retake the quiz now.')
+      setTimeout(() => setSuccessMessage(''), 3000)
+      if (selectedClassId) {
+        const result = await apiRequest(`/teacher/quiz/results?class_id=${encodeURIComponent(selectedClassId)}`, {
+          token: session.token,
+        })
+        setCompletedQuizResults(Array.isArray(result?.results) ? result.results : [])
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to enable quiz retake')
+    }
+  }
+
+  const deleteQuiz = async (quiz) => {
+    const quizId = quiz.id || quiz._id
+    if (!quizId || String(quizId).startsWith('sample-')) {
+      setError('Sample quizzes cannot be deleted.')
+      return
+    }
+
+    const confirmed = window.confirm(`Delete "${quiz.title}"? This will also remove submitted results for this quiz.`)
+    if (!confirmed) return
+
+    try {
+      setError('')
+      setSuccessMessage('')
+      await apiRequest(`/teacher/quiz/${quizId}`, {
+        method: 'DELETE',
+        token: session.token,
+      })
+      setAllQuizzes((current) => current.filter((item) => String(item.id || item._id) !== String(quizId)))
+      setCompletedQuizResults((current) => current.filter((result) => String(result.quiz_id) !== String(quizId)))
+      if (String(editingQuizId) === String(quizId)) {
+        setEditingQuizId(null)
+        setQuizForm({ title: '', timer_seconds: 300, start_date: '' })
+        setQuizQuestions([])
+      }
+      if (retakeQuiz && String(retakeQuiz.id || retakeQuiz._id) === String(quizId)) {
+        setRetakeQuiz(null)
+      }
+      setSuccessMessage('Quiz deleted successfully.')
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      setError(err.message || 'Failed to delete quiz')
     }
   }
 
@@ -1292,12 +1360,10 @@ const createQuiz = async (event) => {
                         Feedback Student
                       </button>
                       <button
-                        className="btn btn-ghost"
-                        disabled={!result.parent_public_id}
-                        title={result.parent_public_id ? 'Send feedback to parent' : 'No parent linked'}
-                        onClick={() => openFeedbackComposer(result, 'parent')}
+                        className="btn btn-secondary"
+                        onClick={() => allowQuizRetake(result)}
                       >
-                        Feedback Parent
+                        Allow Retake
                       </button>
                     </div>
                   </td>
@@ -1319,13 +1385,7 @@ const createQuiz = async (event) => {
           <div className="field-row">
             <label className="field">
               Recipient
-              <select
-                value={feedbackDraft.recipientType}
-                onChange={(e) => openFeedbackComposer(feedbackDraft.quizResult, e.target.value)}
-              >
-                <option value="student">Student</option>
-                <option value="parent">Parent</option>
-              </select>
+              <input value={feedbackDraft.quizResult.student_name || feedbackDraft.quizResult.student_username || 'Student'} readOnly />
             </label>
             <label className="field">
               Quiz
@@ -1384,9 +1444,17 @@ const createQuiz = async (event) => {
                 <td>{quiz.questions?.length || 0}</td>
                 <td>{quiz.start_date ? new Date(quiz.start_date).toLocaleDateString() : 'No date set'}</td>
                 <td>
-                  <button className="btn btn-ghost" onClick={() => loadQuizForEdit(quiz)}>
-                    ✏️ Edit & Re-upload
-                  </button>
+                  <div className="flex-row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button className="btn btn-ghost" onClick={() => loadQuizForEdit(quiz)}>
+                      Edit & Re-upload
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => setRetakeQuiz(quiz)}>
+                      Retakes
+                    </button>
+                    <button className="btn btn-danger" onClick={() => deleteQuiz(quiz)}>
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1394,6 +1462,53 @@ const createQuiz = async (event) => {
         </table>
       </div>
     </article>
+
+    {retakeQuiz && (
+      <article className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Manage Retakes</h2>
+            <p className="subtitle">{retakeQuiz.title}</p>
+          </div>
+          <button className="btn btn-ghost" type="button" onClick={() => setRetakeQuiz(null)}>
+            Close
+          </button>
+        </div>
+
+        {displayQuizResults.filter((result) => String(result.quiz_id) === String(retakeQuiz.id || retakeQuiz._id)).length === 0 ? (
+          <p className="info-text">No submitted students for this quiz yet.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Score</th>
+                  <th>Submitted</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayQuizResults
+                  .filter((result) => String(result.quiz_id) === String(retakeQuiz.id || retakeQuiz._id))
+                  .map((result) => (
+                    <tr key={result.id || `${result.quiz_id}-${result.student_id}`}>
+                      <td>{result.student_name || result.student_username}</td>
+                      <td>{Number(result.score ?? 0).toFixed(1)}%</td>
+                      <td>{result.submitted_at ? new Date(result.submitted_at).toLocaleString() : 'Unknown'}</td>
+                      <td>
+                        <button className="btn btn-secondary" type="button" onClick={() => allowQuizRetake(result)}>
+                          Allow Retake
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </article>
+    )}
 
     {/* QUIZ BUILDER SECTION */}
     <section className="quiz-builder-container" style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '2rem', alignItems: 'start' }}>
