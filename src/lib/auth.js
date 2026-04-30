@@ -14,17 +14,22 @@ export function decodeJwtPayload(token) {
   }
 }
 
-export function createSessionFromToken(token, username = '') {
+export function createSessionFromToken(token, username = '', profile = null) {
   const payload = decodeJwtPayload(token)
   if (!payload?.role || !payload?.user_id) {
     return null
   }
 
+  const user = profile || {}
+
   return {
     token,
     role: payload.role,
     userId: String(payload.user_id),
-    username,
+    username: user.username || username,
+    firstName: user.first_name || user.firstName || '',
+    lastName: user.last_name || user.lastName || '',
+    email: user.email || '',
     expiry: Number(payload.expiry ?? 0),
   }
 }

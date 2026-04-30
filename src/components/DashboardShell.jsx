@@ -8,6 +8,7 @@ function DashboardShell({ title, subtitle, role, username, onLogout, children })
           <p className="subtitle">{subtitle}</p>
         </div>
         <div className="header-meta">
+          <span className="role-badge">{role}</span>
           <p>
             Signed in as <strong>{username}</strong>
           </p>

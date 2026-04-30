@@ -16,7 +16,13 @@ export async function apiRequest(path, { method = 'GET', body, token } = {}) {
   })
 
   const text = await response.text()
-  const data = text ? JSON.parse(text) : null
+  const data = (() => {
+    try {
+      return text ? JSON.parse(text) : null
+    } catch {
+      return { message: text || `Request failed (${response.status})` }
+    }
+  })()
 
   if (!response.ok) {
     const message = data?.error || data?.detail || data?.message || `Request failed (${response.status})`
@@ -32,6 +38,17 @@ export async function loginUser(username, password) {
   return apiRequest('/auth/login', {
     method: 'POST',
     body: { username, password },
+  })
+}
+
+export async function changePassword(currentPassword, newPassword, token) {
+  return apiRequest('/auth/change-password', {
+    method: 'POST',
+    token,
+    body: {
+      current_password: currentPassword,
+      new_password: newPassword,
+    },
   })
 }
 

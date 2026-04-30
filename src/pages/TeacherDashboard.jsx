@@ -15,7 +15,6 @@ function TeacherDashboard({ session, onLogout }) {
   const [selectedStudent, setSelectedStudent] = useState(null)
 
   const [sessionAnnouncements, setSessionAnnouncements] = useState([])
-  const [, setSessionQuizzes] = useState([])
 
   const [chatStudent, setChatStudent] = useState(null)
   const [chatMessage, setChatMessage] = useState('')
@@ -34,8 +33,17 @@ function TeacherDashboard({ session, onLogout }) {
 
 const [allQuizzes, setAllQuizzes] = useState([]); // List for existing quizzes
 const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are editing an old quiz
+  const [lobbies, setLobbies] = useState([])
+  const [loadingLobbies, setLoadingLobbies] = useState(false)
+  const [savingLobby, setSavingLobby] = useState(false)
+  const [lobbyForm, setLobbyForm] = useState({
+    name: '',
+    ip: '',
+    port: '',
+    requiredPlayers: 2,
+  })
 
-  const SAMPLE_QUIZZES = [
+  const SAMPLE_QUIZZES = useMemo(() => [
     {
       id: 'sample-quiz-1',
       class_id: 'sample-class',
@@ -81,9 +89,9 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
         },
       ],
     },
-  ]
+  ], [])
 
-  const buildSampleCompletedQuizResults = (students, classroom) => {
+  const buildSampleCompletedQuizResults = useCallback((students, classroom) => {
     if (!students.length) return []
 
     const studentLabel = (student) => {
@@ -120,7 +128,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
         questions_count: quiz.questions?.length || 0,
       }
     })
-  }
+  }, [SAMPLE_QUIZZES, selectedClassId])
 
   const normalizeQuiz = (quiz) => {
     if (!quiz) return null
@@ -145,7 +153,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       console.error("Failed to fetch quizzes", err);
       setAllQuizzes(SAMPLE_QUIZZES)
     }
-  }, [session.token]);
+  }, [SAMPLE_QUIZZES, session.token]);
 
   const loadQuizForEdit = (quiz) => {
     setEditingQuizId(quiz.id || quiz._id);
@@ -169,6 +177,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     newPassword: '',
     confirmPassword: ''
   })
+  const [profile, setProfile] = useState(null)
   const [updatingProfile, setUpdatingProfile] = useState(false)
 
   const SMART_SUGGESTIONS = [
@@ -203,6 +212,10 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
         return String(classroom.teacher_id ?? classroom.teacherId ?? '') === ownedTeacherId
       })
 
+      if (result.profile?.first_name || result.profile?.last_name || result.profile?.email) {
+        setProfile(result.profile)
+      }
+
       setOverview({
         classes,
         students: result.students || [],
@@ -226,10 +239,31 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     return () => clearTimeout(timer)
   }, [loadOverview])
 
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const result = await apiRequest('/user/profile', { token: session.token })
+        console.log('[TeacherDashboard] profile response:', result)
+        if (result?.first_name || result?.last_name || result?.email) {
+          setProfile(result)
+        } else {
+          console.warn('[TeacherDashboard] profile response missing first_name, last_name, and email:', result)
+        }
+      } catch (err) {
+        console.error('[TeacherDashboard] profile load failed:', err)
+      }
+    }
+
+    void loadProfile()
+  }, [session.token])
+
   // Fetch quizzes when selectedClassId changes
   useEffect(() => {
     if (selectedClassId) {
-      void fetchQuizzes()
+      const timer = setTimeout(() => {
+        void fetchQuizzes()
+      }, 0)
+      return () => clearTimeout(timer)
     }
   }, [selectedClassId, fetchQuizzes])
 
@@ -266,6 +300,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
 
   // Fetch completed quizzes when classStudents or selectedClassId changes
   useEffect(() => {
+    const timer = setTimeout(() => {
     if (!selectedClassId) {
       setCompletedQuizResults([])
       return
@@ -289,7 +324,10 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     }
 
     void fetchCompletedQuizzes()
-  }, [selectedClassId, classStudents, currentClass, session.token])
+    }, 0)
+
+    return () => clearTimeout(timer)
+  }, [buildSampleCompletedQuizResults, selectedClassId, classStudents, currentClass, session.token])
 
   const globalMetrics = useMemo(() => {
     const classCount = overview.classes?.length || 0
@@ -539,7 +577,7 @@ const createQuiz = async (event) => {
       setError('')
       setSuccessMessage('')
 
-      await apiRequest('/api/user/reset-password', {
+      await apiRequest('/auth/change-password', {
         method: 'POST',
         token: session.token,
         body: {
@@ -559,12 +597,174 @@ const createQuiz = async (event) => {
     }
   }
 
+  const classLobbies = useMemo(() => {
+    return lobbies.filter((lobby) => String(lobby.classId) === String(selectedClassId))
+  }, [lobbies, selectedClassId])
+
+  const normalizeLobby = useCallback((lobby, serverStatus = null) => {
+    const status = serverStatus?.status || (serverStatus?.online ? 'Not yet started' : 'Created')
+    const currentPlayers = serverStatus?.current_players ?? serverStatus?.count ?? lobby.player_count ?? 0
+    const requiredPlayers = serverStatus?.required_players ?? lobby.required_players ?? 2
+
+    return {
+      id: lobby.public_id || lobby.id,
+      numericId: lobby.id,
+      publicId: lobby.public_id,
+      classId: lobby.class_id,
+      classPublicId: lobby.class_public_id,
+      className: lobby.class_name || 'Selected Class',
+      name: lobby.name || 'Class Lobby',
+      ip: lobby.ip || '',
+      port: lobby.port || '',
+      currentPlayers,
+      requiredPlayers,
+      persistent: Boolean(lobby.persistent),
+      status,
+      online: Boolean(serverStatus?.online),
+      joinable: Boolean(serverStatus?.joinable ?? lobby.persistent),
+      started: Boolean(serverStatus?.started),
+    }
+  }, [])
+
+  const fetchLobbies = useCallback(async () => {
+    try {
+      setLoadingLobbies(true)
+      setError('')
+
+      const [lobbyResult, serverResult] = await Promise.all([
+        apiRequest('/teacher/lobby/list', { token: session.token }),
+        apiRequest('/server/list').catch(() => []),
+      ])
+
+      const serverStatuses = Array.isArray(serverResult) ? serverResult : []
+      const serverByEndpoint = new Map(
+        serverStatuses.map((server) => [`${server.ip}:${server.port}`, server]),
+      )
+      const lobbyList = Array.isArray(lobbyResult?.lobbies) ? lobbyResult.lobbies : []
+
+      setLobbies(
+        lobbyList.map((lobby) =>
+          normalizeLobby(lobby, serverByEndpoint.get(`${lobby.ip}:${lobby.port}`)),
+        ),
+      )
+    } catch (err) {
+      if (err.status === 401) {
+        onLogout()
+        return
+      }
+      setError(err.message || 'Failed to load lobbies')
+    } finally {
+      setLoadingLobbies(false)
+    }
+  }, [normalizeLobby, onLogout, session.token])
+
+  useEffect(() => {
+    if (activeTab !== 'lobbies') return
+
+    const timer = setTimeout(() => {
+      void fetchLobbies()
+    }, 0)
+
+    return () => clearTimeout(timer)
+  }, [activeTab, fetchLobbies])
+
+  const hostLobby = async (event) => {
+    event.preventDefault()
+
+    if (!selectedClassId) {
+      setError('Please select a class before hosting a lobby.')
+      return
+    }
+
+    const classPublicId = currentClass?.public_id || currentClass?.publicId
+    if (!classPublicId) {
+      setError('Selected class is missing a public ID. Refresh class data before hosting a lobby.')
+      return
+    }
+
+    const port = Number(lobbyForm.port)
+    const requiredPlayers = Number(lobbyForm.requiredPlayers)
+    if (!lobbyForm.ip.trim() || !Number.isInteger(port) || port <= 0) {
+      setError('Enter the game server IP and a valid port.')
+      return
+    }
+
+    try {
+      setSavingLobby(true)
+      setError('')
+      setSuccessMessage('')
+
+      const result = await apiRequest('/teacher/lobby/create', {
+        method: 'POST',
+        token: session.token,
+        body: {
+          class_public_id: classPublicId,
+          name: lobbyForm.name.trim() || `${currentClass?.name || 'Class'} Lobby`,
+          ip: lobbyForm.ip.trim(),
+          port,
+          player_count: Number.isInteger(requiredPlayers) && requiredPlayers > 0 ? requiredPlayers : 2,
+        },
+      })
+
+      const nextLobby = normalizeLobby(result.lobby)
+      setLobbies((current) => [
+        nextLobby,
+        ...current.filter((lobby) => lobby.publicId !== nextLobby.publicId),
+      ])
+      setLobbyForm({ name: '', ip: '', port: '', requiredPlayers: 2 })
+      setSuccessMessage(result.message || 'Lobby hosted successfully.')
+      setTimeout(() => setSuccessMessage(''), 3000)
+      await fetchLobbies()
+    } catch (err) {
+      if (err.status === 401) {
+        onLogout()
+        return
+      }
+      setError(err.message || 'Failed to host lobby')
+    } finally {
+      setSavingLobby(false)
+    }
+  }
+
+  const removeLobby = async (lobbyPublicId) => {
+    const confirmed = window.confirm('Remove this hosted lobby?')
+    if (!confirmed) return
+
+    try {
+      setError('')
+      await apiRequest(`/teacher/lobby/${encodeURIComponent(lobbyPublicId)}`, {
+        method: 'DELETE',
+        token: session.token,
+      })
+      setLobbies((current) => current.filter((lobby) => lobby.publicId !== lobbyPublicId))
+      setSuccessMessage('Lobby removed successfully.')
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      if (err.status === 401) {
+        onLogout()
+        return
+      }
+      setError(err.message || 'Failed to remove lobby')
+    }
+  }
+
+  const copyLobbyCode = async (code) => {
+    try {
+      await navigator.clipboard.writeText(code)
+      setSuccessMessage(`Copied lobby code ${code}.`)
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch {
+      setError(`Lobby code: ${code}`)
+    }
+  }
+
   return (
     <DashboardShell
       title="Teacher Dashboard"
       subtitle="Track class performance and manage daily classroom operations."
       role={session.role}
       username={session.username}
+      onLogout={onLogout}
     >
       {error && <p className="error-text panel">{error}</p>}
       {successMessage && <p className="success-text panel">{successMessage}</p>}
@@ -580,7 +780,7 @@ const createQuiz = async (event) => {
               onClick={() => setActiveTab('profile')}
               style={{ padding: '0.5rem 1.5rem', fontWeight: 'bold' }}
             >
-              👤 My Profile
+              My Profile
             </button>
           </div>
 
@@ -588,7 +788,7 @@ const createQuiz = async (event) => {
           <header className="panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', padding: '1rem 2rem', gap: '1rem', flexWrap: 'wrap' }}>
             <div style={{ flexShrink: 0 }}>
               <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
-                {selectedClassId ? `📁 Workspace: ${currentClass?.name || `${currentClass?.grade_level} - ${currentClass?.section}`}` : '🏠 Main Dashboard'}
+                {selectedClassId ? `📁 Workspace: ${currentClass?.name || `${currentClass?.grade_level} - ${currentClass?.section}`}` : 'Main Dashboard'}
               </h2>
             </div>
             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexGrow: 1, justifyContent: 'flex-end' }}>
@@ -630,6 +830,7 @@ const createQuiz = async (event) => {
             <button disabled={!selectedClassId} className={`tab ${activeTab === 'students' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('students')}>Students & Parents</button>
             <button disabled={!selectedClassId} className={`tab ${activeTab === 'parents' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('parents')}>Messages</button>
             <button disabled={!selectedClassId} className={`tab ${activeTab === 'announcements' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('announcements')}>Announcements</button>
+            <button disabled={!selectedClassId} className={`tab ${activeTab === 'lobbies' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('lobbies')}>Lobbies</button>
             <button disabled={!selectedClassId} className={`tab ${activeTab === 'quizzes' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('quizzes')}>Quizzes</button>
             <button disabled={!selectedClassId} className={`tab ${activeTab === 'analytics' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('analytics')}>Analytics</button>
           </nav>
@@ -643,8 +844,9 @@ const createQuiz = async (event) => {
               </div>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <p><strong>Username:</strong> {session.username}</p>
-                <p><strong>Full Name:</strong> {session.firstName} {session.lastName}</p>
+                <p><strong>Username:</strong> {profile?.username || session.username}</p>
+                <p><strong>Full Name:</strong> {`${profile?.first_name || session.firstName || ''} ${profile?.last_name || session.lastName || ''}`.trim() || 'Not provided'}</p>
+                <p><strong>Email:</strong> {profile?.email || session.email || 'Not provided'}</p>
                 <div>
                   <strong>Classes Assigned:</strong>
                   <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '5px' }}>
@@ -657,13 +859,14 @@ const createQuiz = async (event) => {
             </article>
 
             <article className="panel">
-              <h2>Security & Reset Password</h2>
+              <h2>Change Password</h2>
               
               <form className="form-grid" onSubmit={handlePasswordReset}>
-                <label className="field">Current Password <input type="password" value={profileForm.currentPassword} onChange={(e) => setProfileForm({...profileForm, currentPassword: e.target.value})} required /></label>
-                <label className="field">New Password <input type="password" value={profileForm.newPassword} onChange={(e) => setProfileForm({...profileForm, newPassword: e.target.value})} minLength={6} required /></label>
+                <label className="field">Current Password <input type="password" value={profileForm.currentPassword} onChange={(e) => setProfileForm({...profileForm, currentPassword: e.target.value})} autoComplete="current-password" required /></label>
+                <label className="field">New Password <input type="password" value={profileForm.newPassword} onChange={(e) => setProfileForm({...profileForm, newPassword: e.target.value})} minLength={8} autoComplete="new-password" required /></label>
+                <label className="field">Confirm New Password <input type="password" value={profileForm.confirmPassword} onChange={(e) => setProfileForm({...profileForm, confirmPassword: e.target.value})} minLength={8} autoComplete="new-password" required /></label>
                 <button className="btn btn-primary" type="submit" disabled={updatingProfile}>
-                  {updatingProfile ? 'Updating...' : 'Update Password'}
+                  {updatingProfile ? 'Changing...' : 'Change Password'}
                 </button>
               </form>
             </article>
@@ -916,6 +1119,134 @@ const createQuiz = async (event) => {
                         {savingAnnouncement ? 'Posting...' : 'Publish to Class'}
                       </button>
                     </form>
+                  </article>
+                </section>
+              )}
+
+              {activeTab === 'lobbies' && (
+                <section className="teacher-lobby-grid">
+                  <article className="panel lobby-host-panel">
+                    <div className="panel-head">
+                      <div>
+                        <h2>Host a Lobby</h2>
+                        <p className="subtitle">Register one or more game-server lobbies for this class.</p>
+                      </div>
+                      <span className="badge">{classLobbies.filter((lobby) => lobby.joinable).length} joinable</span>
+                    </div>
+
+                    <form className="form-grid" onSubmit={hostLobby}>
+                      <label className="field">
+                        Lobby name
+                        <input
+                          value={lobbyForm.name}
+                          onChange={(e) => setLobbyForm((current) => ({ ...current, name: e.target.value }))}
+                          placeholder="e.g. Grade 7 Mission Practice"
+                        />
+                      </label>
+
+                      <div className="field-row">
+                        <label className="field">
+                          Server IP
+                          <input
+                            value={lobbyForm.ip}
+                            onChange={(e) => setLobbyForm((current) => ({ ...current, ip: e.target.value }))}
+                            placeholder="e.g. 192.168.1.7"
+                            required
+                          />
+                        </label>
+
+                        <label className="field">
+                          Port
+                          <input
+                            type="number"
+                            min="1"
+                            value={lobbyForm.port}
+                            onChange={(e) => setLobbyForm((current) => ({ ...current, port: e.target.value }))}
+                            placeholder="e.g. 7777"
+                            required
+                          />
+                        </label>
+                      </div>
+
+                      <label className="field">
+                        Required players
+                        <input
+                          type="number"
+                          min="2"
+                          max="60"
+                          value={lobbyForm.requiredPlayers}
+                          onChange={(e) => setLobbyForm((current) => ({ ...current, requiredPlayers: e.target.value }))}
+                        />
+                      </label>
+
+                      <p className="info-text">
+                        Start the game server first. This dashboard registers the server endpoint and links it to the selected class.
+                      </p>
+
+                      <button className="btn btn-primary" type="submit" disabled={savingLobby}>
+                        {savingLobby ? 'Hosting...' : 'Host Lobby'}
+                      </button>
+                    </form>
+                  </article>
+
+                  <article className="panel lobby-list-panel">
+                    <div className="panel-head">
+                      <h2>Hosted Lobbies</h2>
+                      <div className="flex-row">
+                        <span className="badge">{classLobbies.length}</span>
+                        <button className="btn btn-ghost" type="button" onClick={fetchLobbies} disabled={loadingLobbies}>
+                          {loadingLobbies ? 'Refreshing...' : 'Refresh'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {loadingLobbies ? (
+                      <p className="info-text">Loading hosted lobbies...</p>
+                    ) : classLobbies.length === 0 ? (
+                      <p className="info-text">No lobbies hosted for this class yet.</p>
+                    ) : (
+                      <div className="lobby-list">
+                        {classLobbies.map((lobby) => (
+                          <article key={lobby.publicId || lobby.id} className={`lobby-card ${!lobby.joinable ? 'closed' : ''}`}>
+                            <div className="lobby-card-head">
+                              <div>
+                                <h3>{lobby.name}</h3>
+                                <p>{lobby.className}</p>
+                              </div>
+                              <span className={`lobby-status ${lobby.joinable ? 'open' : 'closed'}`}>{lobby.status}</span>
+                            </div>
+
+                            <div className="lobby-code-row">
+                              <span>Endpoint</span>
+                              <strong>{lobby.ip}:{lobby.port}</strong>
+                            </div>
+
+                            <div className="lobby-meta-grid">
+                              <div>
+                                <span>Players</span>
+                                <strong>{lobby.currentPlayers}/{lobby.requiredPlayers}</strong>
+                              </div>
+                              <div>
+                                <span>Lobby ID</span>
+                                <strong>{lobby.publicId || lobby.numericId}</strong>
+                              </div>
+                            </div>
+
+                            <div className="lobby-actions">
+                              <button className="btn btn-ghost" type="button" onClick={() => copyLobbyCode(`${lobby.ip}:${lobby.port}`)}>
+                                Copy Endpoint
+                              </button>
+                              <button className="btn btn-ghost" type="button" onClick={() => copyLobbyCode(lobby.publicId || lobby.id)}>
+                                Copy Lobby ID
+                              </button>
+                              <button className="btn btn-danger" type="button" onClick={() => removeLobby(lobby.publicId)}>
+                                Remove
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
                   </article>
                 </section>
               )}

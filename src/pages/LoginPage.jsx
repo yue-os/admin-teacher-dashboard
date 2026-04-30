@@ -1,7 +1,8 @@
 import { useState } from 'react'
 
-function LoginPage({ onLogin, isSubmitting, error }) {
+function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, error }) {
   const [form, setForm] = useState({ username: '', password: '' })
+  const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' })
 
   const onChange = (event) => {
     const { name, value } = event.target
@@ -13,13 +14,81 @@ function LoginPage({ onLogin, isSubmitting, error }) {
     onLogin(form)
   }
 
+  const onPasswordChange = (event) => {
+    const { name, value } = event.target
+    setPasswordForm((current) => ({ ...current, [name]: value }))
+  }
+
+  const onPasswordSubmit = (event) => {
+    event.preventDefault()
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) return
+    onChangePassword({ newPassword: passwordForm.newPassword })
+  }
+
   return (
     <div className="auth-layout">
       <section className="auth-card">
-        <p className="eyebrow">BatangAware</p>
-        <h1>BatangAware Portal</h1>
-        <p className="subtitle">Secure sign-in for admin, teacher, and parent dashboards.</p>
+        <div className="auth-brand">
+          <span className="brand-mark" aria-hidden="true">B</span>
+          <p className="eyebrow">BatangAware</p>
+          <h1>BatangAware Portal</h1>
+          <p className="subtitle">Secure sign-in for admin, teacher, and parent dashboards.</p>
+          <div className="palette-strip" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
 
+        {passwordChange ? (
+          <form onSubmit={onPasswordSubmit} className="form-grid">
+            <label className="field">
+              New password
+              <input
+                type="password"
+                name="newPassword"
+                minLength={8}
+                value={passwordForm.newPassword}
+                onChange={onPasswordChange}
+                placeholder="Enter a new password"
+                required
+              />
+            </label>
+
+            <label className="field">
+              Confirm password
+              <input
+                type="password"
+                name="confirmPassword"
+                minLength={8}
+                value={passwordForm.confirmPassword}
+                onChange={onPasswordChange}
+                placeholder="Re-enter new password"
+                required
+              />
+            </label>
+
+            {passwordForm.newPassword &&
+              passwordForm.confirmPassword &&
+              passwordForm.newPassword !== passwordForm.confirmPassword && (
+                <p className="error-text">Passwords do not match</p>
+              )}
+            {error && <p className="error-text">{error}</p>}
+
+            <button
+              className="btn btn-primary"
+              type="submit"
+              disabled={
+                isSubmitting ||
+                !passwordForm.newPassword ||
+                passwordForm.newPassword !== passwordForm.confirmPassword
+              }
+            >
+              {isSubmitting ? 'Saving...' : 'Change password'}
+            </button>
+          </form>
+        ) : (
         <form onSubmit={onSubmit} className="form-grid">
           <label className="field">
             Username
@@ -51,6 +120,7 @@ function LoginPage({ onLogin, isSubmitting, error }) {
             {isSubmitting ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
+        )}
       </section>
     </div>
   )
