@@ -14,7 +14,8 @@ function TeacherDashboard({ session, onLogout }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedStudent, setSelectedStudent] = useState(null)
 
-  const [sessionAnnouncements, setSessionAnnouncements] = useState([])
+  const [announcements, setAnnouncements] = useState([])
+  const [loadingAnnouncements, setLoadingAnnouncements] = useState(false)
 
   const [chatStudent, setChatStudent] = useState(null)
   const [chatMessage, setChatMessage] = useState('')
@@ -156,6 +157,18 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     }
   }, [SAMPLE_QUIZZES, session.token]);
 
+  const fetchAnnouncements = useCallback(async () => {
+    try {
+      setLoadingAnnouncements(true)
+      const result = await apiRequest('/teacher/announcements', { token: session.token })
+      setAnnouncements(Array.isArray(result?.announcements) ? result.announcements : [])
+    } catch (err) {
+      console.error('Failed to fetch announcements:', err)
+    } finally {
+      setLoadingAnnouncements(false)
+    }
+  }, [session.token])
+
   const loadQuizForEdit = (quiz) => {
     setEditingQuizId(quiz.id || quiz._id);
     setQuizForm({
@@ -257,6 +270,10 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
 
     void loadProfile()
   }, [session.token])
+
+  useEffect(() => {
+    void fetchAnnouncements()
+  }, [fetchAnnouncements])
 
   // Fetch quizzes when selectedClassId changes
   useEffect(() => {
@@ -376,12 +393,9 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
         method: 'POST',
         token: session.token,
         body: { class_id: selectedClassId, ...announcementForm },
-      }).catch(() => console.warn('Announcement API simulated'))
+      })
       
-      setSessionAnnouncements((prev) => [
-        { ...announcementForm, class_id: selectedClassId, date: new Date().toLocaleDateString() },
-        ...prev,
-      ])
+      await fetchAnnouncements()
       
       setAnnouncementForm({ title: '', message: '' })
       setSuccessMessage('Announcement posted successfully!')
@@ -396,6 +410,25 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       setSavingAnnouncement(false)
     }
   }
+
+  const deleteAnnouncement = async (id) => {
+    if (!id) return;
+    const confirmed = window.confirm('Delete this announcement?');
+    if (!confirmed) return;
+
+    try {
+      setError('');
+      await apiRequest(`/teacher/announcement/${id}`, {
+        method: 'DELETE',
+        token: session.token,
+      });
+      setAnnouncements((current) => current.filter((a) => String(a.id) !== String(id)));
+      setSuccessMessage('Announcement deleted successfully.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setError(err.message || 'Failed to delete announcement');
+    }
+  };
 
   const sendChatMessage = async (event) => {
     event.preventDefault()
@@ -1143,19 +1176,30 @@ const createQuiz = async (event) => {
                 <section className="two-col">
                   <article className="panel">
                     <h2>Notice Board</h2>
-                    {sessionAnnouncements.filter((a) => a.class_id === selectedClassId).length === 0 ? (
+                    {announcements.filter((a) => String(a.class_id) === String(selectedClassId)).length === 0 ? (
                       <p className="info-text">No announcements posted for this class yet.</p>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {sessionAnnouncements
-                          .filter((a) => a.class_id === selectedClassId)
+                        {announcements
+                          .filter((a) => String(a.class_id) === String(selectedClassId))
                           .map((a, i) => (
-                            <div key={i} style={{ padding: '1rem', background: '#f9fafb', borderRadius: '8px', borderLeft: '4px solid var(--primary)' }}>
+                            <div key={a.id || i} style={{ padding: '1rem', background: '#f9fafb', borderRadius: '8px', borderLeft: '4px solid var(--primary)' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                                 <strong>{a.title}</strong>
-                                <small style={{ color: '#666' }}>{a.date}</small>
+                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                  <small style={{ color: '#666' }}>{a.created_at ? new Date(a.created_at).toLocaleDateString() : 'Just now'}</small>
+                                  {a.id && (
+                                    <button 
+                                      type="button"
+                                      onClick={() => deleteAnnouncement(a.id)}
+                                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.875rem' }}
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                              <p style={{ margin: 0, fontSize: '0.9rem' }}>{a.message}</p>
+                              <p style={{ margin: 0, fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>{a.message}</p>
                             </div>
                           ))}
                       </div>
