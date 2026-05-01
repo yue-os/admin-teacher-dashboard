@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts'
 import DashboardShell from '../components/DashboardShell'
 import { apiRequest } from '../lib/api'
 
@@ -118,6 +119,14 @@ function AdminDashboard({ session, onLogout }) {
     return () => clearTimeout(timer)
   }, [loadData])
 
+  // Auto-refresh analytics in the background every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchAnalytics().catch((err) => console.error("Background analytics refresh failed", err))
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [fetchAnalytics])
+
   const summary = analytics?.summary
   const userCounts = useMemo(() => {
     return users.reduce(
@@ -147,6 +156,23 @@ function AdminDashboard({ session, onLogout }) {
     [summary],
   )
 
+  const roleDistributionData = useMemo(() => {
+    return [
+      { name: 'Admin', value: userCounts.Admin },
+      { name: 'Teacher', value: userCounts.Teacher },
+      { name: 'Parent', value: userCounts.Parent },
+      { name: 'Student', value: userCounts.Student },
+    ].filter((d) => d.value > 0)
+  }, [userCounts])
+
+  const performanceData = useMemo(() => {
+    return [
+      { name: 'Completion', value: summary?.average_completion_rate ?? 0 },
+      { name: 'Quiz Score', value: summary?.average_quiz_score ?? 0 }
+    ]
+  }, [summary])
+
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042']
 
   const onFieldChange = (event) => {
     const { name, value } = event.target
@@ -741,7 +767,9 @@ function AdminDashboard({ session, onLogout }) {
       {successMessage && <p className="success-text panel">{successMessage}</p>}
 
       {loading ? (
-        <p>Loading dashboard...</p>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem', color: '#64748b' }}>
+          <p>Loading dashboard data...</p>
+        </div>
       ) : (
         <>
           <nav className="tabs">
@@ -772,14 +800,67 @@ function AdminDashboard({ session, onLogout }) {
           </nav>
 
           {activeTab === 'analytics' && (
-            <section className="cards-grid">
-              {cards.map((card) => (
-                <article key={card.label} className="metric-card">
-                  <p>{card.label}</p>
-                  <h3>{card.value}</h3>
+            <div className="analytics-dashboard" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '-1rem' }}>
+                <button className="btn btn-ghost" type="button" onClick={() => fetchAnalytics()}>
+                  ↻ Refresh Analytics
+                </button>
+              </div>
+              <section className="cards-grid">
+                {cards.map((card) => (
+                  <article key={card.label} className="metric-card panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', textAlign: 'center' }}>
+                    <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>{card.label}</p>
+                    <h3 style={{ margin: 0, fontSize: '2rem', color: '#0f172a' }}>{card.value}</h3>
+                  </article>
+                ))}
+              </section>
+
+              <section className="charts-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
+                <article className="panel">
+                  <h3 style={{ marginBottom: '1.5rem', textAlign: 'center' }}>User Role Distribution</h3>
+                  <div style={{ height: '300px', width: '100%' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={roleDistributionData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {roleDistributionData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip />
+                        <Legend verticalAlign="bottom" height={36} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 </article>
-              ))}
-            </section>
+
+                <article className="panel">
+                  <h3 style={{ marginBottom: '1.5rem', textAlign: 'center' }}>Average Performance (%)</h3>
+                  <div style={{ height: '300px', width: '100%' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={performanceData}
+                        margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="name" />
+                        <YAxis domain={[0, 100]} />
+                        <RechartsTooltip cursor={{ fill: 'transparent' }} />
+                        <Bar dataKey="value" fill="#3b82f6" radius={[6, 6, 0, 0]} maxBarSize={60} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </article>
+              </section>
+            </div>
           )}
 
           {activeTab === 'users' && (
