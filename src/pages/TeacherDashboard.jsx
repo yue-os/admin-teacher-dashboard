@@ -69,6 +69,14 @@ const getConversationKey = (...parts) =>
     .map((part) => String(part).trim().toLowerCase())
     .join('|')
 
+const CHAT_SUGGESTION_MESSAGES = [
+  'Displayed strong focus during the learning activity.',
+  'Completed the quiz with steady confidence.',
+  'Needed a little extra support during the activity.',
+  'Showed clear improvement over recent class work.',
+  'Had lower participation during the quiz.',
+]
+
 const apiEndpoint = (() => {
   try {
     const apiUrl = new URL(import.meta.env.VITE_API_BASE_URL || window.location.origin)
@@ -1598,15 +1606,29 @@ const createQuiz = async (event) => {
                           })}
                           <div ref={chatEndRef} />
                         </div>
-                        <form className="chat-composer" onSubmit={sendChatMessage}>
-                          <input
-                            value={chatMessage}
-                            onChange={(e) => setChatMessage(e.target.value)}
-                            placeholder="Type a message..."
-                            required
-                          />
-                          <button className="chat-send-button" type="submit" aria-label="Send message" title="Send message" />
-                        </form>
+                        <div className="chat-controls">
+                          <div className="chat-suggestions" aria-label="Message suggestions">
+                            {CHAT_SUGGESTION_MESSAGES.map((suggestion) => (
+                              <button
+                                key={suggestion}
+                                type="button"
+                                className="chat-suggestion"
+                                onClick={() => setChatMessage(suggestion)}
+                              >
+                                {suggestion}
+                              </button>
+                            ))}
+                          </div>
+                          <form className="chat-composer" onSubmit={sendChatMessage}>
+                            <input
+                              value={chatMessage}
+                              onChange={(e) => setChatMessage(e.target.value)}
+                              placeholder="Type a message..."
+                              required
+                            />
+                            <button className="chat-send-button" type="submit" aria-label="Send message" title="Send message" />
+                          </form>
+                        </div>
                       </>
                     ) : (
                       <div className="chat-empty">

@@ -504,12 +504,10 @@ function ParentDashboard({ session, onLogout }) {
             </button>
           </div>
 
-          {activeTab !== 'profile' && (
-            <nav className="tabs parent-tabs">
-              <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
-              <button className={`tab ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => setActiveTab('messages')}>Teacher Messages</button>
-            </nav>
-          )}
+          <nav className="tabs parent-tabs">
+            <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
+            <button className={`tab ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => setActiveTab('messages')}>Teacher Messages</button>
+          </nav>
 
           {activeTab === 'profile' ? (
             <section className="parent-profile-grid">
