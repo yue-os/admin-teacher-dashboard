@@ -29,9 +29,8 @@ function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, er
     <div className="auth-layout">
       <section className="auth-card">
         <div className="auth-brand">
-          <span className="brand-mark" aria-hidden="true">B</span>
-          <p className="eyebrow">BatangAware</p>
-          <h1>BatangAware Portal</h1>
+          <img className="brand-logo login-logo" src="/batangaware-logo.png" alt="BatangAware" />
+          <h1>BatangAware Dashboard</h1>
           <p className="subtitle">Secure sign-in for admin, teacher, and parent dashboards.</p>
           <div className="palette-strip" aria-hidden="true">
             <span />

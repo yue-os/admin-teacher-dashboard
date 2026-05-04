@@ -74,6 +74,7 @@ function ParentDashboard({ session, onLogout }) {
   const [linking, setLinking] = useState(false)
   const [selectedChildUsername, setSelectedChildUsername] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
+  const [parentInsightModal, setParentInsightModal] = useState(null)
   const [profile, setProfile] = useState(null)
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
@@ -271,16 +272,57 @@ function ParentDashboard({ session, onLogout }) {
 
   const summaryCards = useMemo(() => {
     const totalChildren = childrenStats.length
-    const totalLogs = childrenStats.reduce((count, child) => count + (child.playtime_logs?.length || 0), 0)
-    const totalScores = childrenStats.reduce((count, child) => count + (child.scores?.length || 0), 0)
-    const activeChildren = childrenStats.filter((child) => (child.playtime_logs || []).length > 0).length
+    const scores = childrenStats.flatMap((child) => child.scores || [])
+    const scoreValues = scores
+      .map((score) => Number(score.score ?? score.quiz_score ?? score.value))
+      .filter((score) => Number.isFinite(score))
+    const averageScore = scoreValues.length
+      ? `${(scoreValues.reduce((sum, score) => sum + score, 0) / scoreValues.length).toFixed(1)}%`
+      : '0%'
+    const completedTasks = scores.filter((score) => String(score.status || '').toLowerCase().includes('complete')).length
+    const pendingTasks = Math.max(0, scores.length - completedTasks)
+    const completionRate = scores.length ? `${Math.round((completedTasks / scores.length) * 100)}%` : '0%'
+    const recentActivityCount = childrenStats.reduce(
+      (count, child) => count + (child.playtime_logs?.slice(0, 2).length || 0) + (child.scores?.slice(0, 2).length || 0),
+      0,
+    )
 
     return [
-      { label: 'Linked Children', value: totalChildren },
-      { label: 'Active Children', value: activeChildren },
-      { label: 'Playtime Entries', value: totalLogs },
-      { label: 'Mission Records', value: totalScores },
+      { key: 'children', label: 'Linked Children', value: totalChildren, description: 'View children and class status' },
+      { key: 'quiz', label: 'Average Quiz Score', value: averageScore, description: 'Recent quiz results' },
+      { key: 'completion', label: 'Completion Rate', value: completionRate, description: `${completedTasks} completed • ${pendingTasks} pending` },
+      { key: 'activity', label: 'Recent Activity', value: recentActivityCount, description: 'Latest updates' },
     ]
+  }, [childrenStats])
+
+  const parentInsights = useMemo(() => {
+    const scores = childrenStats.flatMap((child) =>
+      (child.scores || []).map((score) => ({
+        ...score,
+        childName: child.child,
+      })),
+    )
+    const completedTasks = scores.filter((score) => String(score.status || '').toLowerCase().includes('complete'))
+    const pendingTasks = scores.filter((score) => !String(score.status || '').toLowerCase().includes('complete'))
+    const recentActivity = childrenStats.flatMap((child) => [
+      ...(child.scores || []).slice(0, 3).map((score) => ({
+        type: 'Score',
+        title: score.mission_id || score.quiz_title || 'Learning activity',
+        detail: `${child.child} • ${score.score ?? 'No score'}${score.status ? ` • ${score.status}` : ''}`,
+      })),
+      ...(child.playtime_logs || []).slice(0, 3).map((log) => ({
+        type: 'Playtime',
+        title: log.date || 'Recent play session',
+        detail: `${child.child} • ${log.minutes ?? 0} minutes`,
+      })),
+    ])
+
+    return {
+      scores,
+      completedTasks,
+      pendingTasks,
+      recentActivity,
+    }
   }, [childrenStats])
 
   const handleLinkChild = async (event) => {
@@ -660,12 +702,18 @@ function ParentDashboard({ session, onLogout }) {
             </section>
           ) : (
             <>
-          <section className="cards-grid parent-summary-grid">
+          <section className="admin-analytics-grid parent-insight-grid">
             {summaryCards.map((card) => (
-              <article key={card.label} className="metric-card">
-                <p>{card.label}</p>
-                <h3>{card.value}</h3>
-              </article>
+              <button
+                key={card.key}
+                type="button"
+                className="metric-card admin-analytics-card"
+                onClick={() => setParentInsightModal(card.key)}
+              >
+                <span>{card.label}</span>
+                <strong>{card.value}</strong>
+                <small>{card.description}</small>
+              </button>
             ))}
           </section>
 
@@ -800,6 +848,127 @@ function ParentDashboard({ session, onLogout }) {
             </>
           )}
         </>
+      )}
+
+      {parentInsightModal && (
+        <div className="analytics-modal-overlay" role="presentation" onClick={() => setParentInsightModal(null)}>
+          <section className="analytics-modal panel parent-insight-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <button className="analytics-modal-close" type="button" aria-label="Close insight modal" onClick={() => setParentInsightModal(null)}>
+              x
+            </button>
+
+            {parentInsightModal === 'children' && (
+              <>
+                <div className="analytics-modal-head">
+                  <span>Linked Children</span>
+                  <h2>Children Overview</h2>
+                  <p>Class, grade, and progress status for each linked child.</p>
+                </div>
+                <div className="parent-insight-list">
+                  {childrenStats.length === 0 ? (
+                    <p className="info-text">No children linked yet.</p>
+                  ) : (
+                    childrenStats.map((child) => {
+                      const totalTasks = child.scores?.length || 0
+                      const completedTasks = (child.scores || []).filter((score) => String(score.status || '').toLowerCase().includes('complete')).length
+                      return (
+                        <article key={child.child_public_id || child.child} className="parent-insight-row">
+                          <div>
+                            <strong>{child.child}</strong>
+                            <span>{child.class_name || child.grade_level || (child.class_id ? `Class ID ${child.class_id}` : 'Class not assigned')}</span>
+                          </div>
+                          <em>{totalTasks ? `${completedTasks}/${totalTasks} completed` : 'No tasks yet'}</em>
+                        </article>
+                      )
+                    })
+                  )}
+                </div>
+              </>
+            )}
+
+            {parentInsightModal === 'quiz' && (
+              <>
+                <div className="analytics-modal-head">
+                  <span>Average Quiz Score</span>
+                  <h2>Recent Quiz Scores</h2>
+                  <p>Recent score records from linked children.</p>
+                </div>
+                <div className="parent-insight-list">
+                  {parentInsights.scores.length === 0 ? (
+                    <p className="info-text">No quiz or score records yet.</p>
+                  ) : (
+                    parentInsights.scores.slice(0, 10).map((score, index) => (
+                      <article key={`${score.childName}-${score.mission_id || score.quiz_title || index}`} className="parent-insight-row">
+                        <div>
+                          <strong>{score.quiz_title || score.mission_id || 'Learning activity'}</strong>
+                          <span>{score.childName}{score.status ? ` • ${score.status}` : ''}</span>
+                        </div>
+                        <em>{score.score ?? 'No score'}</em>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+
+            {parentInsightModal === 'completion' && (
+              <>
+                <div className="analytics-modal-head">
+                  <span>Completion Rate</span>
+                  <h2>Completed and Pending Tasks</h2>
+                  <p>A simple view of what is done and what still needs attention.</p>
+                </div>
+                <div className="parent-task-grid">
+                  <article>
+                    <h3>Completed</h3>
+                    {parentInsights.completedTasks.length === 0 ? (
+                      <p className="info-text">No completed tasks yet.</p>
+                    ) : (
+                      parentInsights.completedTasks.slice(0, 8).map((task, index) => (
+                        <p key={`done-${task.childName}-${index}`}>{task.childName} • {task.mission_id || task.quiz_title || 'Task'}</p>
+                      ))
+                    )}
+                  </article>
+                  <article>
+                    <h3>Pending</h3>
+                    {parentInsights.pendingTasks.length === 0 ? (
+                      <p className="info-text">No pending tasks right now.</p>
+                    ) : (
+                      parentInsights.pendingTasks.slice(0, 8).map((task, index) => (
+                        <p key={`pending-${task.childName}-${index}`}>{task.childName} • {task.mission_id || task.quiz_title || 'Task'}</p>
+                      ))
+                    )}
+                  </article>
+                </div>
+              </>
+            )}
+
+            {parentInsightModal === 'activity' && (
+              <>
+                <div className="analytics-modal-head">
+                  <span>Recent Activity</span>
+                  <h2>Latest Updates</h2>
+                  <p>Recent actions and learning updates from linked children.</p>
+                </div>
+                <div className="parent-insight-list">
+                  {parentInsights.recentActivity.length === 0 ? (
+                    <p className="info-text">No recent activity yet.</p>
+                  ) : (
+                    parentInsights.recentActivity.slice(0, 10).map((activity, index) => (
+                      <article key={`${activity.type}-${index}`} className="parent-insight-row">
+                        <div>
+                          <strong>{activity.title}</strong>
+                          <span>{activity.detail}</span>
+                        </div>
+                        <em>{activity.type}</em>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+        </div>
       )}
     </DashboardShell>
   )

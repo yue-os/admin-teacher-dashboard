@@ -3,6 +3,8 @@
   --red: #F6534C;
   --yellow: #FFC12D;
   --teal: #4DB6AC;
+  --orange: #F59E0B;
+  --purple: #7C3AED;
   --text: #475569;
   --text-h: #172033;
   --bg: #f6f8f3;
@@ -23,6 +25,9 @@
   --shadow:
     rgba(23, 32, 51, 0.08) 0 12px 28px -18px,
     rgba(23, 32, 51, 0.06) 0 8px 18px -16px;
+  --shadow-hover:
+    rgba(23, 32, 51, 0.14) 0 18px 34px -18px,
+    rgba(23, 32, 51, 0.1) 0 10px 22px -18px;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
