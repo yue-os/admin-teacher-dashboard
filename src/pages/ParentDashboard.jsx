@@ -1,12 +1,69 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import DashboardShell from '../components/DashboardShell'
 import { getParentStats, linkChild, unlinkChild, apiRequest } from '../lib/api'
+import { saveSession } from '../lib/auth'
 
 const passwordReminderText = 'For better account security, you can update your password anytime in My Profile.'
 
+const getFullName = (person, fallback = 'Unknown') => {
+  const fullName = `${(person?.first_name || person?.firstName || '').trim()} ${(person?.last_name || person?.lastName || '').trim()}`.trim()
+  return fullName || person?.full_name || person?.name || person?.username || fallback
+}
+
+const parseStudentMessage = (content = '') => {
+  const lines = String(content).split(/\r?\n/)
+  const context = { student: '', className: '', from: '', body: String(content).trim() }
+
+  for (const line of lines) {
+    if (line.startsWith('Student:')) context.student = line.replace('Student:', '').trim()
+    if (line.startsWith('Class:')) context.className = line.replace('Class:', '').trim()
+    if (line.startsWith('From:')) context.from = line.replace('From:', '').trim()
+  }
+
+  const blankIndex = lines.findIndex((line) => line.trim() === '')
+  if (context.student && context.className && blankIndex >= 0) {
+    context.body = lines.slice(blankIndex + 1).join('\n').trim()
+  }
+
+  return context
+}
+
+const getMessageStudent = (message) => message.student_name || message.quiz_info?.student_name || parseStudentMessage(message.content).student
+const getMessageClass = (message) => message.class_name || message.quiz_info?.class_name || parseStudentMessage(message.content).className
+const getMessageBody = (message) => (message.student_name && message.class_name ? message.content : parseStudentMessage(message.content).body)
+
+const formatMessageTimestamp = (value) => {
+  const date = new Date(value || Date.now())
+  return `${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} • ${date.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}`
+}
+
+const getMessageTime = (message) => new Date(message?.created_at || 0).getTime() || 0
+
+const readStoredJson = (key) => {
+  if (typeof window === 'undefined') return {}
+
+  try {
+    return JSON.parse(window.localStorage.getItem(key) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+const writeStoredJson = (key, value) => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(key, JSON.stringify(value))
+}
+
+const getConversationKey = (...parts) =>
+  parts
+    .filter(Boolean)
+    .map((part) => String(part).trim().toLowerCase())
+    .join('|')
+
 function ParentDashboard({ session, onLogout }) {
   const location = useLocation()
+  const readStorageKey = `parent-chat-read:${session.userId || session.username || 'current'}`
   const [childrenStats, setChildrenStats] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -29,6 +86,12 @@ function ParentDashboard({ session, onLogout }) {
   const [activeTeacher, setActiveTeacher] = useState(null)
   const [replyText, setReplyText] = useState('')
   const [sendingReply, setSendingReply] = useState(false)
+  const [readConversations, setReadConversations] = useState(() => readStoredJson(readStorageKey))
+
+  const chatEndRef = useRef(null)
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
 
   useEffect(() => {
     if (successMessage !== passwordReminderText) return
@@ -55,7 +118,7 @@ function ParentDashboard({ session, onLogout }) {
     } finally {
       setLoading(false)
     }
-  }, [onLogout, selectedChildUsername, session.token])
+  }, [onLogout, selectedChildUsername, session])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -80,7 +143,7 @@ function ParentDashboard({ session, onLogout }) {
     }
 
     void loadProfile()
-  }, [session.token])
+  }, [session])
 
   const fetchMessages = useCallback(async () => {
     try {
@@ -111,6 +174,100 @@ function ParentDashboard({ session, onLogout }) {
     () => childrenStats.find((child) => child.child === selectedChildUsername) || childrenStats[0] || null,
     [childrenStats, selectedChildUsername],
   )
+
+  // Group messages into unique conversations for the sidebar
+  const conversations = useMemo(() => {
+    const conversationMap = new Map()
+
+    messages.forEach((msg) => {
+      const teacherId = msg.sender_role === 'Teacher' 
+        ? msg.sender_public_id 
+        : msg.receiver_public_id
+      const studentName = getMessageStudent(msg)
+      const className = getMessageClass(msg)
+      if (!teacherId || !studentName || !className) return
+      
+      // A unique conversation is defined by the Teacher, the Student, and the Class
+      const key = `${teacherId}-${studentName}-${className}`.toLowerCase()
+      
+      if (!conversationMap.has(key)) {
+        conversationMap.set(key, msg)
+      }
+    })
+
+    return Array.from(conversationMap.values())
+  }, [messages])
+
+  const activeMessageContext = useMemo(() => {
+    if (!activeTeacher) return null
+
+    const teacherName = activeTeacher.sender_role === 'Teacher'
+      ? activeTeacher.sender_name
+      : activeTeacher.receiver_role === 'Teacher'
+        ? activeTeacher.receiver_name
+        : 'Teacher'
+    const teacherPublicId = activeTeacher.sender_role === 'Teacher'
+      ? activeTeacher.sender_public_id
+      : activeTeacher.receiver_role === 'Teacher'
+        ? activeTeacher.receiver_public_id
+        : activeTeacher.sender_public_id || activeTeacher.teacher_public_id
+    const studentName = getMessageStudent(activeTeacher)
+    const className = getMessageClass(activeTeacher)
+    const matchingChild = childrenStats.find((child) => {
+      const childNames = [
+        child.child,
+        `${child.first_name || ''} ${child.last_name || ''}`.trim(),
+      ].filter(Boolean).map((name) => name.toLowerCase())
+
+      return studentName && childNames.includes(studentName.toLowerCase())
+    })
+
+    return {
+      studentName: studentName || matchingChild?.child || selectedChild?.child || 'Selected student',
+      className: className || (matchingChild?.class_id ? `Class ID ${matchingChild.class_id}` : selectedChild?.class_id ? `Class ID ${selectedChild.class_id}` : 'Selected class'),
+      senderName: getFullName(profile || session, session.username || 'Parent'),
+      teacherName,
+      teacherPublicId,
+      body: getMessageBody(activeTeacher),
+    }
+  }, [activeTeacher, childrenStats, profile, selectedChild, session])
+
+  const activeConversationMessages = useMemo(() => {
+    if (!activeMessageContext?.studentName || !activeMessageContext?.teacherPublicId) return []
+
+    return messages
+      .filter((message) => {
+        const sameStudent = (getMessageStudent(message) || '').toLowerCase() === activeMessageContext.studentName.toLowerCase()
+        const sameClass = (getMessageClass(message) || '').toLowerCase() === activeMessageContext.className.toLowerCase()
+        const sameTeacher =
+          message.sender_public_id === activeMessageContext.teacherPublicId ||
+          message.receiver_public_id === activeMessageContext.teacherPublicId
+
+        return sameStudent && sameClass && sameTeacher
+      })
+      .slice()
+      .reverse()
+  }, [activeMessageContext, messages])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [activeConversationMessages])
+
+  const markConversationRead = useCallback((conversationKey, conversationMessages) => {
+    const latestIncomingTime = conversationMessages
+      .filter((message) => message.sender_role !== 'Parent')
+      .reduce((latest, message) => Math.max(latest, getMessageTime(message)), 0)
+
+    if (!latestIncomingTime) return
+
+    setReadConversations((current) => {
+      if ((current[conversationKey] || 0) >= latestIncomingTime) return current
+
+      const next = { ...current, [conversationKey]: latestIncomingTime }
+      writeStoredJson(readStorageKey, next)
+      return next
+    })
+  }, [readStorageKey])
 
   const summaryCards = useMemo(() => {
     const totalChildren = childrenStats.length
@@ -179,7 +336,28 @@ function ParentDashboard({ session, onLogout }) {
 
   const handleSendReply = async (e) => {
     e.preventDefault()
-    if (!replyText.trim()) return
+    if (!replyText.trim() || !activeTeacher || !activeMessageContext?.studentName) {
+      setError('Select one student message before replying.')
+      return
+    }
+
+    const tempId = Date.now()
+    const content = replyText.trim()
+
+    const newMessage = {
+      id: tempId,
+      sender_role: 'Parent',
+      sender_name: activeMessageContext.senderName,
+      receiver_public_id: activeMessageContext.teacherPublicId,
+      student_name: activeMessageContext.studentName,
+      class_name: activeMessageContext.className,
+      content,
+      created_at: new Date().toISOString(),
+      status: 'sending',
+    }
+
+    setMessages((prev) => [newMessage, ...prev])
+    setReplyText('')
 
     try {
       setSendingReply(true)
@@ -187,18 +365,40 @@ function ParentDashboard({ session, onLogout }) {
         method: 'POST',
         token: session.token,
         body: {
-          receiver_public_id: activeTeacher.sender_public_id || activeTeacher.teacher_public_id,
-          content: replyText,
+          receiver_public_id: activeMessageContext.teacherPublicId,
+          student_name: activeMessageContext.studentName,
+          class_name: activeMessageContext.className,
+          content,
         },
       })
-      setReplyText('')
-      setSuccessMessage('Reply sent successfully!')
-      await fetchMessages() // Immediate refresh after sending
-      setTimeout(() => setSuccessMessage(''), 3000)
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m)))
     } catch (err) {
-      setError(err.message || 'Failed to send message.')
+      setError(err.message || 'Failed to sync message with server.')
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m)))
     } finally {
       setSendingReply(false)
+    }
+  }
+
+  const handleRetryReply = async (message) => {
+    if (!message?.receiver_public_id || !message?.student_name || !message?.class_name || !message?.content) return
+
+    try {
+      setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, status: 'sending' } : m)))
+      await apiRequest('/api/messages', {
+        method: 'POST',
+        token: session.token,
+        body: {
+          receiver_public_id: message.receiver_public_id,
+          student_name: message.student_name,
+          class_name: message.class_name,
+          content: message.content,
+        },
+      })
+      setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, status: 'sent' } : m)))
+    } catch (err) {
+      setError(err.message || 'Failed to sync message with server.')
+      setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, status: 'failed' } : m)))
     }
   }
 
@@ -225,8 +425,10 @@ function ParentDashboard({ session, onLogout }) {
         },
       })
 
+      saveSession({ ...session, mustChangePassword: false })
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
       setSuccessMessage('Password changed successfully.')
+      void loadStats()
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
       setError(err.message || 'Failed to change password')
@@ -353,63 +555,106 @@ function ParentDashboard({ session, onLogout }) {
               </article>
             </section>
           ) : activeTab === 'messages' ? (
-            <section className="parent-messages-grid">
-              <article className="panel parent-inbox-panel">
-                <h2>Conversations</h2>
-                <div className="message-inbox">
-                  {messages.length === 0 ? (
+            <section className="panel chat-shell">
+              <aside className="chat-sidebar">
+                <div className="chat-sidebar-head">
+                  <h2>Messages</h2>
+                </div>
+                <div className="chat-contact-list">
+                  {conversations.length === 0 ? (
                     <p className="info-text">No messages from teachers yet.</p>
                   ) : (
-                    messages.map((msg, i) => (
-                      <div 
-                        key={i} 
-                        className={`inbox-item ${activeTeacher?.sender_name === msg.sender_name ? 'active' : ''}`}
-                        onClick={() => setActiveTeacher(msg)}
-                      >
-                        <strong>{msg.sender_name || 'Teacher'}</strong>
-                        <p className="truncate-text">
-                          {msg.content}
-                        </p>
-                      </div>
-                    ))
+                    conversations.map((msg, i) => {
+                      const contactName = msg.sender_role === 'Parent' ? msg.receiver_name || 'Teacher' : msg.sender_name || 'Teacher'
+                      const latestTimestamp = formatMessageTimestamp(msg.created_at).split(' • ')[0]
+                      const teacherPublicId = msg.sender_role === 'Teacher' ? msg.sender_public_id : msg.receiver_public_id
+                      const studentName = getMessageStudent(msg)
+                      const className = getMessageClass(msg)
+                      const conversationKey = getConversationKey(teacherPublicId, studentName, className)
+                      const conversationMessages = messages.filter((message) => (
+                        (getMessageStudent(message) || '').toLowerCase() === String(studentName || '').toLowerCase() &&
+                        (getMessageClass(message) || '').toLowerCase() === String(className || '').toLowerCase() &&
+                        (message.sender_public_id === teacherPublicId || message.receiver_public_id === teacherPublicId)
+                      ))
+                      const unreadCount = conversationMessages.filter((message) => (
+                        message.sender_role !== 'Parent' &&
+                        getMessageTime(message) > (readConversations[conversationKey] || 0)
+                      )).length
+                      return (
+                        <button
+                          key={msg.public_id || i}
+                          type="button"
+                          className={`chat-contact ${activeTeacher?.public_id === msg.public_id ? 'active' : ''}`}
+                          onClick={() => {
+                            setActiveTeacher(msg)
+                            markConversationRead(conversationKey, conversationMessages)
+                          }}
+                        >
+                          <span className="chat-avatar">{contactName.charAt(0).toUpperCase()}</span>
+                          <div>
+                            <span className="chat-contact-top">
+                              <strong>{contactName}</strong>
+                              <span className="chat-contact-side">
+                                <small>{latestTimestamp}</small>
+                                {unreadCount > 0 && <span className="unread-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+                              </span>
+                            </span>
+                            <p className={unreadCount > 0 ? 'unread-preview' : ''}>{getMessageBody(msg)}</p>
+                            <span className="chat-contact-context">{getMessageStudent(msg)} • {getMessageClass(msg)}</span>
+                          </div>
+                        </button>
+                      )
+                    })
                   )}
                 </div>
-              </article>
+              </aside>
 
-              <article className="panel parent-chat-panel">
+              <article className="chat-main">
                 {activeTeacher ? (
                   <>
-                    <div className="panel-head">
-                      <h2>Chat with {activeTeacher.sender_name || 'Teacher'}</h2>
-                    </div>
-                    <div className="chat-history">
-                       <div className="msg-bubble teacher-msg">
-                         <small><strong>Teacher:</strong></small>
-                         <p>
-                           {activeTeacher.content}
-                        </p>
+                    <div className="chat-main-head">
+                      <div className="chat-title-row">
+                        <span className="chat-presence" aria-label="Online" />
+                        <h2>{activeMessageContext?.teacherName || 'Teacher'}</h2>
                       </div>
+                      <p>{activeMessageContext?.studentName} • {activeMessageContext?.className}</p>
+                    </div>
+                    <div className="chat-thread">
+                      {activeConversationMessages.map((message) => {
+                        const isOutgoing = message.sender_role === 'Parent'
+
+                        return (
+                          <div key={message.public_id || message.id} className={`message-wrapper ${isOutgoing ? 'sent' : 'received'}`}>
+                            <div className={`chat-bubble ${message.status === 'failed' ? 'failed' : ''}`}>
+                              <p className="chat-text">{getMessageBody(message)}</p>
+                              <span className="chat-timestamp">
+                                {formatMessageTimestamp(message.created_at)}
+                                {message.status === 'failed' ? ' • Failed to send' : ''}
+                              </span>
+                              {message.status === 'failed' && (
+                                <button className="chat-retry" type="button" onClick={() => handleRetryReply(message)}>
+                                  Retry
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                      <div ref={chatEndRef} />
                     </div>
 
-                    <form className="form-grid" onSubmit={handleSendReply}>
-                      <textarea 
-                        rows={4}
+                    <form className="chat-composer" onSubmit={handleSendReply}>
+                      <input
                         value={replyText} 
                         onChange={(e) => setReplyText(e.target.value)} 
-                        placeholder="Type your reply..."
+                        placeholder="Type a message..."
                         required
                       />
-                      <div>
-                        <button className="btn btn-primary" type="submit" disabled={sendingReply}>
-                          {sendingReply ? 'Sending...' : 'Send Message'}
-                        </button>
-                      </div>
+                      <button className="chat-send-button" type="submit" disabled={sendingReply} aria-label="Send message" title="Send message" />
                     </form>
                   </>
                 ) : (
-                  <div className="parent-empty-chat">
-                    <p className="info-text">Select a teacher to view the conversation.</p>
-                  </div>
+                  <div className="chat-empty">Select a teacher to view the conversation.</div>
                 )}
               </article>
             </section>
@@ -457,12 +702,12 @@ function ParentDashboard({ session, onLogout }) {
               <h2>Link a Child</h2>
               <form className="form-grid" onSubmit={handleLinkChild}>
                 <label className="field">
-                  Child username
+                  Child username, email, public ID, or full name
                   <input
                     type="text"
                     value={childUsername}
                     onChange={(event) => setChildUsername(event.target.value)}
-                    placeholder="Enter student's username"
+                    placeholder="Enter student identifier"
                     required
                   />
                 </label>

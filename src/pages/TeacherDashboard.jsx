@@ -1,9 +1,73 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import DashboardShell from '../components/DashboardShell'
 import { apiRequest } from '../lib/api'
+import { saveSession } from '../lib/auth'
 
 const passwordReminderText = 'For better account security, you can update your password anytime in My Profile.'
+const passwordRequiredText = 'Please change your temporary password in My Profile before loading teacher dashboard data.'
+const isPasswordChangeRequiredError = (err) =>
+  err?.status === 403 && String(err?.message || '').toLowerCase().includes('password change required')
+
+const getFullName = (person, fallback = 'Unknown') => {
+  const fullName = `${(person?.first_name || person?.firstName || '').trim()} ${(person?.last_name || person?.lastName || '').trim()}`.trim()
+  return fullName || person?.full_name || person?.name || person?.username || fallback
+}
+
+const getStudentLabel = (student) => getFullName(student, student?.student_name || student?.student_username || 'Student')
+const getClassLabel = (classroom, fallback = 'Selected Class') =>
+  classroom?.name || classroom?.class_name || `${classroom?.grade_level || ''} ${classroom?.section || ''}`.trim() || fallback
+
+const parseStudentMessage = (content = '') => {
+  const lines = String(content).split(/\r?\n/)
+  const context = { student: '', className: '', from: '', body: String(content).trim() }
+
+  for (const line of lines) {
+    if (line.startsWith('Student:')) context.student = line.replace('Student:', '').trim()
+    if (line.startsWith('Class:')) context.className = line.replace('Class:', '').trim()
+    if (line.startsWith('From:')) context.from = line.replace('From:', '').trim()
+  }
+
+  const blankIndex = lines.findIndex((line) => line.trim() === '')
+  if (context.student && context.className && blankIndex >= 0) {
+    context.body = lines.slice(blankIndex + 1).join('\n').trim()
+  }
+
+  return context
+}
+
+const getMessageStudent = (message) => message.student_name || message.quiz_info?.student_name || parseStudentMessage(message.content).student
+const getMessageClass = (message) => message.class_name || message.quiz_info?.class_name || parseStudentMessage(message.content).className
+const getMessageBody = (message) => (message.student_name && message.class_name ? message.content : parseStudentMessage(message.content).body)
+
+const formatMessageTimestamp = (value) => {
+  const date = new Date(value || Date.now())
+  return `${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} • ${date.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}`
+}
+
+const getMessageTime = (message) => new Date(message?.created_at || 0).getTime() || 0
+
+const readStoredJson = (key) => {
+  if (typeof window === 'undefined') return {}
+
+  try {
+    return JSON.parse(window.localStorage.getItem(key) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+const writeStoredJson = (key, value) => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(key, JSON.stringify(value))
+}
+
+const getConversationKey = (...parts) =>
+  parts
+    .filter(Boolean)
+    .map((part) => String(part).trim().toLowerCase())
+    .join('|')
+
 const apiEndpoint = (() => {
   try {
     const apiUrl = new URL(import.meta.env.VITE_API_BASE_URL || window.location.origin)
@@ -35,8 +99,11 @@ const getGeneratedLobbyPort = (lobbies) => {
 
 function TeacherDashboard({ session, onLogout }) {
   const location = useLocation()
+  const readStorageKey = `teacher-chat-read:${session.userId || session.username || 'current'}`
+  const initialPasswordChangeRequired = Boolean(location.state?.passwordReminder || session.mustChangePassword)
   const [overview, setOverview] = useState({ classes: [], students: [], parents: [] })
-  const [loading, setLoading] = useState(true)
+  const [passwordChangeRequired, setPasswordChangeRequired] = useState(initialPasswordChangeRequired)
+  const [loading, setLoading] = useState(!initialPasswordChangeRequired)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState(() =>
     location.state?.passwordReminder ? passwordReminderText : '',
@@ -44,7 +111,7 @@ function TeacherDashboard({ session, onLogout }) {
 
   // UI & Feature States
   const [selectedClassId, setSelectedClassId] = useState('')
-  const [activeTab, setActiveTab] = useState('analytics')
+  const [activeTab, setActiveTab] = useState(() => (initialPasswordChangeRequired ? 'profile' : 'analytics'))
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedStudent, setSelectedStudent] = useState(null)
 
@@ -53,6 +120,9 @@ function TeacherDashboard({ session, onLogout }) {
 
   const [chatStudent, setChatStudent] = useState(null)
   const [chatMessage, setChatMessage] = useState('')
+  const [teacherMessages, setTeacherMessages] = useState([])
+  const [loadingTeacherMessages, setLoadingTeacherMessages] = useState(false)
+  const [readConversations, setReadConversations] = useState(() => readStoredJson(readStorageKey))
 
   const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '' })
   const [savingAnnouncement, setSavingAnnouncement] = useState(false)
@@ -60,6 +130,11 @@ function TeacherDashboard({ session, onLogout }) {
   const [quizForm, setQuizForm] = useState({ title: '', timer_seconds: 300, start_date: '' })
   const [savingQuiz, setSavingQuiz] = useState(false)
   const [quizQuestions, setQuizQuestions] = useState([])
+
+  const chatEndRef = useRef(null)
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
   const [activeQuestionId, setActiveQuestionId] = useState(null)
   const [completedQuizResults, setCompletedQuizResults] = useState([])
   const [loadingCompletedQuizResults, setLoadingCompletedQuizResults] = useState(false)
@@ -175,8 +250,20 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     }
   }
 
+  const handlePasswordRequired = useCallback(() => {
+    setPasswordChangeRequired(true)
+    setActiveTab('profile')
+    setLoading(false)
+    setLoadingAnnouncements(false)
+    setError(passwordRequiredText)
+  }, [])
 
   const fetchQuizzes = useCallback(async () => {
+    if (passwordChangeRequired) {
+      setAllQuizzes(SAMPLE_QUIZZES)
+      return
+    }
+
     try {
       const result = await apiRequest('/teacher/quizzes', {
         token: session.token,
@@ -185,22 +272,36 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       const normalized = quizzes.map(normalizeQuiz).filter(Boolean)
       setAllQuizzes(normalized.length ? normalized : SAMPLE_QUIZZES)
     } catch (err) {
+      if (isPasswordChangeRequiredError(err)) {
+        handlePasswordRequired()
+        setAllQuizzes(SAMPLE_QUIZZES)
+        return
+      }
       console.error("Failed to fetch quizzes", err);
       setAllQuizzes(SAMPLE_QUIZZES)
     }
-  }, [SAMPLE_QUIZZES, session.token]);
+  }, [SAMPLE_QUIZZES, handlePasswordRequired, passwordChangeRequired, session.token]);
 
   const fetchAnnouncements = useCallback(async () => {
+    if (passwordChangeRequired) {
+      setLoadingAnnouncements(false)
+      return
+    }
+
     try {
       setLoadingAnnouncements(true)
       const result = await apiRequest('/teacher/announcements', { token: session.token })
       setAnnouncements(Array.isArray(result?.announcements) ? result.announcements : [])
     } catch (err) {
+      if (isPasswordChangeRequiredError(err)) {
+        handlePasswordRequired()
+        return
+      }
       console.error('Failed to fetch announcements:', err)
     } finally {
       setLoadingAnnouncements(false)
     }
-  }, [session.token])
+  }, [handlePasswordRequired, passwordChangeRequired, session.token])
 
   const loadQuizForEdit = (quiz) => {
     setEditingQuizId(quiz.id || quiz._id);
@@ -234,13 +335,12 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     return () => clearTimeout(timer)
   }, [successMessage])
 
-  const SMART_SUGGESTIONS = [
-    "Your child is doing well in quizzes.",
-    "Your child needs improvement in recent activities.",
-    "We recommend reviewing recent lessons."
-  ]
+  const loadOverview = useCallback(async ({ force = false } = {}) => {
+    if (passwordChangeRequired && !force) {
+      setLoading(false)
+      return
+    }
 
-  const loadOverview = useCallback(async () => {
     try {
       setError('')
       setLoading(true)
@@ -252,19 +352,15 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
         })
         console.log('Teacher overview API response:', result)
       } catch (apiErr) {
-        console.warn('Failed to fetch teacher overview, using simulated data:', apiErr)
-        result = {
-          classes: [],
-          students: [],
-          parents: [],
+        if (isPasswordChangeRequiredError(apiErr)) {
+          handlePasswordRequired()
+          return
         }
+        console.error('Failed to fetch teacher overview:', apiErr)
+        throw apiErr
       }
 
-      const ownedTeacherId = String(session.userId ?? '')
-      const classes = (result.classes || []).filter((classroom) => {
-        if (!ownedTeacherId) return true
-        return String(classroom.teacher_id ?? classroom.teacherId ?? '') === ownedTeacherId
-      })
+      const classes = result.classes || []
 
       if (result.profile?.first_name || result.profile?.last_name || result.profile?.email) {
         setProfile(result.profile)
@@ -276,6 +372,10 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
         parents: result.parents || [],
       })
     } catch (err) {
+      if (isPasswordChangeRequiredError(err)) {
+        handlePasswordRequired()
+        return
+      }
       if (err.status === 401) {
         onLogout()
         return
@@ -284,16 +384,20 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     } finally {
       setLoading(false)
     }
-  }, [onLogout, session.token, session.userId])
+  }, [handlePasswordRequired, onLogout, passwordChangeRequired, session])
 
   useEffect(() => {
+    if (passwordChangeRequired) return
+
     const timer = setTimeout(() => {
       void loadOverview()
     }, 0)
     return () => clearTimeout(timer)
-  }, [loadOverview])
+  }, [loadOverview, passwordChangeRequired])
 
   useEffect(() => {
+    if (passwordChangeRequired) return
+
     const loadProfile = async () => {
       try {
         const result = await apiRequest('/user/profile', { token: session.token })
@@ -304,19 +408,25 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
           console.warn('[TeacherDashboard] profile response missing first_name, last_name, and email:', result)
         }
       } catch (err) {
+        if (isPasswordChangeRequiredError(err)) {
+          handlePasswordRequired()
+          return
+        }
         console.error('[TeacherDashboard] profile load failed:', err)
       }
     }
 
     void loadProfile()
-  }, [session.token])
+  }, [handlePasswordRequired, passwordChangeRequired, session])
 
   useEffect(() => {
+    if (passwordChangeRequired) return
+
     const timer = setTimeout(() => {
       void fetchAnnouncements()
     }, 0)
     return () => clearTimeout(timer)
-  }, [fetchAnnouncements])
+  }, [fetchAnnouncements, passwordChangeRequired])
 
   // Fetch quizzes when selectedClassId changes
   useEffect(() => {
@@ -331,13 +441,10 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
   const filteredClasses = useMemo(() => {
     if (!overview.classes) return []
     return overview.classes.filter((c) => {
-      if (session.userId && String(c.teacher_id ?? c.teacherId ?? '') !== String(session.userId)) {
-        return false
-      }
       const name = c.name || `${c.grade_level || ''} ${c.section || ''}`
       return name.toLowerCase().includes(searchQuery.toLowerCase())
     })
-  }, [overview.classes, searchQuery, session.userId])
+  }, [overview.classes, searchQuery])
 
   const currentClass = useMemo(() => {
     return (
@@ -356,11 +463,59 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     ) || []
   }, [overview.students, currentClass])
 
+  const senderName = useMemo(() => getFullName(profile || session, session.username || 'Teacher'), [profile, session])
+
+  const chatStudentContext = useMemo(() => {
+    if (!chatStudent) return null
+
+    return {
+      studentName: getStudentLabel(chatStudent),
+      className: getClassLabel(currentClass, chatStudent.class_name || 'Selected Class'),
+      senderName,
+    }
+  }, [chatStudent, currentClass, senderName])
+
+  const chatStudentMessages = useMemo(() => {
+    if (!chatStudentContext) return []
+
+    return teacherMessages
+      .filter((message) => {
+        return (
+          (getMessageStudent(message) || '').toLowerCase() === chatStudentContext.studentName.toLowerCase() &&
+          (getMessageClass(message) || '').toLowerCase() === chatStudentContext.className.toLowerCase()
+        )
+      })
+      .slice()
+      .reverse()
+  }, [chatStudentContext, teacherMessages])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [chatStudentMessages])
+
+  const markConversationRead = useCallback((conversationKey, conversationMessages) => {
+    const latestIncomingTime = conversationMessages
+      .filter((message) => message.sender_role !== 'Teacher')
+      .reduce((latest, message) => Math.max(latest, getMessageTime(message)), 0)
+
+    if (!latestIncomingTime) return
+
+    setReadConversations((current) => {
+      if ((current[conversationKey] || 0) >= latestIncomingTime) return current
+
+      const next = { ...current, [conversationKey]: latestIncomingTime }
+      writeStoredJson(readStorageKey, next)
+      return next
+    })
+  }, [readStorageKey])
+
   const displayQuizResults = completedQuizResults.length ? completedQuizResults : buildSampleCompletedQuizResults(classStudents, currentClass)
   const displayQuizzes = allQuizzes.length ? allQuizzes : SAMPLE_QUIZZES
 
   // Fetch completed quizzes when classStudents or selectedClassId changes
   useEffect(() => {
+    if (passwordChangeRequired) return
+
     const timer = setTimeout(() => {
     if (!selectedClassId) {
       setCompletedQuizResults([])
@@ -377,6 +532,11 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
         const sampleResults = buildSampleCompletedQuizResults(classStudents, currentClass)
         setCompletedQuizResults(liveResults.length ? liveResults : sampleResults)
       } catch (err) {
+        if (isPasswordChangeRequiredError(err)) {
+          handlePasswordRequired()
+          setCompletedQuizResults([])
+          return
+        }
         console.error('Failed to fetch completed quiz results', err)
         setCompletedQuizResults(buildSampleCompletedQuizResults(classStudents, currentClass))
       } finally {
@@ -388,7 +548,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     }, 0)
 
     return () => clearTimeout(timer)
-  }, [buildSampleCompletedQuizResults, selectedClassId, classStudents, currentClass, session.token])
+  }, [buildSampleCompletedQuizResults, selectedClassId, classStudents, currentClass, handlePasswordRequired, passwordChangeRequired, session.token])
 
   const globalMetrics = useMemo(() => {
     const classCount = overview.classes?.length || 0
@@ -426,33 +586,39 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     ]
   }, [classStudents])
 
-  const createAnnouncement = async (event) => {
-    event.preventDefault()
-    try {
-      setSavingAnnouncement(true)
-      setError('')
-      setSuccessMessage('')
-      await apiRequest('/teacher/announcement', {
-        method: 'POST',
-        token: session.token,
-        body: { class_id: selectedClassId, ...announcementForm },
-      })
-      
-      await fetchAnnouncements()
-      
-      setAnnouncementForm({ title: '', message: '' })
-      setSuccessMessage('Announcement posted successfully!')
-      setTimeout(() => setSuccessMessage(''), 3000)
-    } catch (err) {
-      if (err.status === 401) {
-        onLogout()
-        return
-      }
-      setError(err.message)
-    } finally {
-      setSavingAnnouncement(false)
+const createAnnouncement = async (event) => {
+  event.preventDefault();
+  try {
+    setSavingAnnouncement(true);
+    setError('');
+    setSuccessMessage('');
+
+    // Single, well-formed API request
+    await apiRequest('/teacher/announcement', {
+      method: 'POST',
+      token: session.token,
+      body: { 
+        class_id: Number(selectedClassId), 
+        ...announcementForm 
+      },
+    });
+    
+    // Refresh the local state from server
+    await fetchAnnouncements();
+    
+    setAnnouncementForm({ title: '', message: '' });
+    setSuccessMessage('Announcement posted successfully!');
+    setTimeout(() => setSuccessMessage(''), 3000);
+  } catch (err) {
+    if (err.status === 401) {
+      onLogout();
+      return;
     }
+    setError(err.message || 'Failed to post announcement');
+  } finally {
+    setSavingAnnouncement(false);
   }
+};
 
   const deleteAnnouncement = async (id) => {
     if (!id) return;
@@ -473,23 +639,104 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     }
   };
 
+  const fetchTeacherMessages = useCallback(async () => {
+    try {
+      setLoadingTeacherMessages(true)
+      const result = await apiRequest('/teacher/messages', { token: session.token })
+      setTeacherMessages(Array.isArray(result) ? result : [])
+    } catch (err) {
+      if (err.status === 401) {
+        onLogout()
+        return
+      }
+      console.error('Failed to fetch teacher messages:', err)
+    } finally {
+      setLoadingTeacherMessages(false)
+    }
+  }, [onLogout, session.token])
+
+  useEffect(() => {
+    if (activeTab !== 'parents') return
+
+    const timer = setTimeout(() => {
+      void fetchTeacherMessages()
+    }, 0)
+    const interval = setInterval(fetchTeacherMessages, 5000)
+
+    return () => {
+      clearTimeout(timer)
+      clearInterval(interval)
+    }
+  }, [activeTab, fetchTeacherMessages])
+
   const sendChatMessage = async (event) => {
     event.preventDefault()
     if (!chatMessage.trim()) return
+    if (!chatStudentContext) {
+      setError('Select one student before sending a message.')
+      return
+    }
+
+    const receiverPublicId = chatStudent.parent_public_id || chatStudent.student_public_id
+    if (!receiverPublicId) {
+      setError('This student has no linked parent account to message.')
+      return
+    }
+
+    const tempId = Date.now()
+    const content = chatMessage.trim()
+    const newMessage = {
+      id: tempId,
+      sender_role: 'Teacher',
+      sender_name: chatStudentContext.senderName,
+      receiver_public_id: receiverPublicId,
+      student_name: chatStudentContext.studentName,
+      class_name: chatStudentContext.className,
+      content,
+      created_at: new Date().toISOString(),
+      status: 'sending',
+    }
+
+    setTeacherMessages(prev => [newMessage, ...prev])
+    setChatMessage('')
+
     try {
-      setError('')
-      setSuccessMessage('')
       await apiRequest('/teacher/message', {
         method: 'POST',
         token: session.token,
-        body: { student_id: chatStudent.student_id || chatStudent.id, message: chatMessage },
-      }).catch(() => console.warn('Chat API simulated'))
-      setChatStudent(null)
-      setChatMessage('')
-      setSuccessMessage('Message sent to parent successfully!')
-      setTimeout(() => setSuccessMessage(''), 3000)
+        body: {
+          receiver_public_id: receiverPublicId,
+          student_name: chatStudentContext.studentName,
+          class_name: chatStudentContext.className,
+          content,
+        },
+      })
+      setTeacherMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'sent' } : m)))
     } catch (err) {
-      setError(err.message)
+      setError(err.message || "Message failed to sync with server.")
+      setTeacherMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m)))
+    }
+  }
+
+  const retryChatMessage = async (message) => {
+    if (!message?.receiver_public_id || !message?.student_name || !message?.class_name || !message?.content) return
+
+    try {
+      setTeacherMessages(prev => prev.map(m => (m.id === message.id ? { ...m, status: 'sending' } : m)))
+      await apiRequest('/teacher/message', {
+        method: 'POST',
+        token: session.token,
+        body: {
+          receiver_public_id: message.receiver_public_id,
+          student_name: message.student_name,
+          class_name: message.class_name,
+          content: message.content,
+        },
+      })
+      setTeacherMessages(prev => prev.map(m => (m.id === message.id ? { ...m, status: 'sent' } : m)))
+    } catch (err) {
+      setError(err.message || "Message failed to sync with server.")
+      setTeacherMessages(prev => prev.map(m => (m.id === message.id ? { ...m, status: 'failed' } : m)))
     }
   }
 
@@ -731,7 +978,12 @@ const createQuiz = async (event) => {
       })
 
       setSuccessMessage('Password updated successfully!')
+      setPasswordChangeRequired(false)
+      setActiveTab('analytics')
+      setError('')
+      saveSession({ ...session, mustChangePassword: false })
       setProfileForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+      void loadOverview({ force: true })
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
       setError(err.message || 'Failed to update password')
@@ -1015,6 +1267,7 @@ const createQuiz = async (event) => {
 
             <article className="panel">
               <h2>Change Password</h2>
+              {passwordChangeRequired && <p className="info-text">{passwordRequiredText}</p>}
               
               <form className="form-grid" onSubmit={handlePasswordReset}>
                 <label className="field">Current Password <input type="password" value={profileForm.currentPassword} onChange={(e) => setProfileForm({...profileForm, currentPassword: e.target.value})} autoComplete="current-password" required /></label>
@@ -1031,7 +1284,11 @@ const createQuiz = async (event) => {
             <>
               <section className="panel center-card" style={{ marginBottom: '2rem' }}>
                 <h2>Welcome to your Teacher Dashboard</h2>
-                <p>Please select a class from the top menu to enter Workspace Mode and manage students, post announcements, and assign quizzes.</p>
+                <p>
+                  {overview.classes.length
+                    ? 'Please select a class from the top menu to enter Workspace Mode and manage students, post announcements, and assign quizzes.'
+                    : 'No classes were returned for this teacher account yet. In Admin, make sure the class is assigned to this exact teacher account, then refresh.'}
+                </p>
               </section>
               <section className="cards-grid">
                 {globalMetrics.map((metric) => (
@@ -1147,79 +1404,110 @@ const createQuiz = async (event) => {
               )}
 
               {activeTab === 'parents' && (
-                <section className="two-col">
-                  <article className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-                    <h2 style={{ padding: '1.5rem 1.5rem 0.5rem', margin: 0 }}>Parents Directory</h2>
-                    <div className="parent-list" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                <section className="panel chat-shell">
+                  <aside className="chat-sidebar">
+                    <div className="chat-sidebar-head">
+                      <h2>Messages</h2>
+                      {loadingTeacherMessages && <p className="chat-sync-status">Syncing...</p>}
+                    </div>
+                    <div className="chat-contact-list">
                       {classStudents.filter(s => s.parent_name).length === 0 ? (
                         <p className="info-text" style={{ padding: '1.5rem' }}>No parents linked in this class.</p>
                       ) : (
                         classStudents.filter(s => s.parent_name).map(student => {
-                          const isSelected = chatStudent?.id === (student.id || student.student_id);
+                          const isSelected = chatStudent?.id === (student.id || student.student_id)
+                          const studentName = getStudentLabel(student)
+                          const studentClassName = getClassLabel(currentClass, student.class_name || 'Selected Class')
+                          const conversationKey = getConversationKey(
+                            student.parent_public_id || student.parent_name,
+                            studentName,
+                            studentClassName,
+                          )
+                          const studentMessages = teacherMessages.filter((message) => (
+                            (getMessageStudent(message) || '').toLowerCase() === studentName.toLowerCase() &&
+                            (getMessageClass(message) || '').toLowerCase() === studentClassName.toLowerCase()
+                          ))
+                          const latestMessage = studentMessages[0]
+                          const latestBody = latestMessage ? getMessageBody(latestMessage) : `Parent of ${student.username || student.first_name}`
+                          const latestTimestamp = latestMessage ? formatMessageTimestamp(latestMessage.created_at).split(' • ')[0] : ''
+                          const unreadCount = studentMessages.filter((message) => (
+                            message.sender_role !== 'Teacher' &&
+                            getMessageTime(message) > (readConversations[conversationKey] || 0)
+                          )).length
                           return (
-                            <div 
+                            <button
                               key={student.student_id || student.id}
-                              onClick={() => setChatStudent(student)}
-                              style={{
-                                padding: '1rem 1.5rem',
-                                borderBottom: '1px solid var(--border-color, #eee)',
-                                cursor: 'pointer',
-                                backgroundColor: isSelected ? 'var(--bg-hover, rgba(0,0,0,0.05))' : 'transparent',
-                                borderLeft: isSelected ? '4px solid var(--primary)' : '4px solid transparent'
+                              type="button"
+                              className={`chat-contact ${isSelected ? 'active' : ''}`}
+                              onClick={() => {
+                                setChatStudent(student)
+                                markConversationRead(conversationKey, studentMessages)
                               }}
                             >
-                              <strong>{student.parent_name}</strong>
-                              <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
-                                Parent of: {student.username || student.first_name}
+                              <span className="chat-avatar">{(student.parent_name || 'P').charAt(0).toUpperCase()}</span>
+                              <div>
+                                <span className="chat-contact-top">
+                                  <strong>{student.parent_name}</strong>
+                                  <span className="chat-contact-side">
+                                    {latestTimestamp && <small>{latestTimestamp}</small>}
+                                    {unreadCount > 0 && <span className="unread-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+                                  </span>
+                                </span>
+                                <p className={unreadCount > 0 ? 'unread-preview' : ''}>{latestBody}</p>
+                                <span className="chat-contact-context">{studentName} • {chatStudentContext?.className || getClassLabel(currentClass, student.class_name || 'Selected Class')}</span>
                               </div>
-                            </div>
+                            </button>
                           )
                         })
                       )}
                     </div>
-                  </article>
+                  </aside>
 
-                  <article className="panel">
+                  <article className="chat-main">
                     {chatStudent ? (
                       <>
-                        <div className="panel-head" style={{ marginBottom: '1.5rem' }}>
-                          <h2>Chat: {chatStudent.parent_name}</h2>
+                        <div className="chat-main-head">
+                          <div className="chat-title-row">
+                            <span className="chat-presence" aria-label="Online" />
+                            <h2>{chatStudent.parent_name}</h2>
+                          </div>
+                          <p>{chatStudentContext?.studentName} • {chatStudentContext?.className}</p>
                         </div>
-                        <form className="form-grid" onSubmit={sendChatMessage}>
-                          <div className="suggestions" style={{ background: '#f9fafb', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
-                            <p style={{ fontSize: '0.875rem', marginBottom: '0.75rem', color: '#333' }}><strong>💡 Smart Suggestions:</strong></p>
-                            {SMART_SUGGESTIONS.map(s => (
-                              <button
-                                key={s}
-                                type="button"
-                                className="btn btn-ghost"
-                                style={{ display: 'block', textAlign: 'left', marginBottom: '0.5rem', fontSize: '0.875rem', whiteSpace: 'normal', height: 'auto', width: '100%', background: '#fff', border: '1px solid #e2e8f0' }}
-                                onClick={() => setChatMessage(s)}
-                              >
-                                "{s}"
-                              </button>
-                            ))}
-                          </div>
-                          <label className="field">
-                            Direct Message
-                            <textarea
-                              rows={5}
-                              value={chatMessage}
-                              onChange={(e) => setChatMessage(e.target.value)}
-                              placeholder="Type your message to the parent here..."
-                              required
-                              style={{ resize: 'vertical' }}
-                            />
-                          </label>
-                          <div className="flex-row" style={{ justifyContent: 'flex-start' }}>
-                            <button className="btn btn-primary" type="submit">Send Message</button>
-                            <button className="btn btn-ghost" type="button" onClick={() => setChatStudent(null)}>Cancel</button>
-                          </div>
+                        <div className="chat-thread">
+                          {chatStudentMessages.map((message) => {
+                            const isTeacher = message.sender_role === 'Teacher';
+                            return (
+                              <div key={message.id} className={`chat-message ${isTeacher ? 'outgoing' : 'incoming'}`}>
+                                <div className={`chat-bubble ${message.status === 'failed' ? 'failed' : ''}`}>
+                                  <p>{getMessageBody(message)}</p>
+                                  <span className="chat-timestamp">
+                                    {formatMessageTimestamp(message.created_at)}
+                                    {message.status === 'failed' ? ' • Failed to send' : ''}
+                                  </span>
+                                  {message.status === 'failed' && (
+                                    <button className="chat-retry" type="button" onClick={() => retryChatMessage(message)}>
+                                      Retry
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div ref={chatEndRef} />
+                        </div>
+                        <form className="chat-composer" onSubmit={sendChatMessage}>
+                          <input
+                            value={chatMessage}
+                            onChange={(e) => setChatMessage(e.target.value)}
+                            placeholder="Type a message..."
+                            required
+                          />
+                          <button className="chat-send-button" type="submit" aria-label="Send message" title="Send message" />
                         </form>
                       </>
                     ) : (
-                      <div className="center-card" style={{ height: '100%', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                        <p style={{ color: 'var(--text-light, #666)' }}>Select a parent from the directory to start a chat.</p>
+                      <div className="chat-empty">
+                        Select a parent to view the conversation.
                       </div>
                     )}
                   </article>

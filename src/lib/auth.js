@@ -30,6 +30,7 @@ export function createSessionFromToken(token, username = '', profile = null) {
     firstName: user.first_name || user.firstName || '',
     lastName: user.last_name || user.lastName || '',
     email: user.email || '',
+    mustChangePassword: Boolean(user.must_change_password || user.mustChangePassword),
     expiry: Number(payload.expiry ?? 0),
   }
 }

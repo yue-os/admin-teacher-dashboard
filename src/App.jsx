@@ -43,17 +43,7 @@ function App() {
       const response = await loginUser(username, password)
       const nextSession = createSessionFromToken(response.access_token, username, response.user)
       const mustChangePassword = response.must_change_password || response.mustChangePassword
-      const canDeferPasswordChange = ['Teacher', 'Parent'].includes(nextSession.role)
-
-      if (mustChangePassword && !canDeferPasswordChange) {
-        setPasswordChange({
-          token: response.access_token,
-          username,
-          currentPassword: password,
-          session: nextSession,
-        })
-        return
-      }
+      nextSession.mustChangePassword = Boolean(mustChangePassword)
 
       setPasswordChange(null)
       setSession(nextSession)
@@ -61,7 +51,7 @@ function App() {
 
       navigate(getDashboardPath(nextSession.role), {
         replace: true,
-        state: canDeferPasswordChange && mustChangePassword ? { passwordReminder: true } : undefined,
+        state: mustChangePassword ? { passwordReminder: true } : undefined,
       })
     } catch (error) {
       setLoginError(error.message)
@@ -77,10 +67,11 @@ function App() {
       setLoginError('')
       setIsSubmitting(true)
       await changePassword(passwordChange.currentPassword, newPassword, passwordChange.token)
-      setSession(passwordChange.session)
-      saveSession(passwordChange.session)
+      const nextSession = { ...passwordChange.session, mustChangePassword: false }
+      setSession(nextSession)
+      saveSession(nextSession)
 
-      navigate(getDashboardPath(passwordChange.session.role), { replace: true })
+      navigate(getDashboardPath(nextSession.role), { replace: true })
 
       setPasswordChange(null)
     } catch (error) {

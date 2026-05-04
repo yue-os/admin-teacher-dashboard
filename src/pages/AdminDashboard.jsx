@@ -693,7 +693,7 @@ function AdminDashboard({ session, onLogout }) {
     }
   }
 
-  const formatUserClasses = (user) => {
+  const formatUserClasses = useCallback((user) => {
     if (user.role === 'Teacher') {
       const assignedClasses = (user.classes?.length ? user.classes : classes.filter((cls) => {
         const teacherId = cls.teacher_id ?? cls.teacherId
@@ -711,7 +711,7 @@ function AdminDashboard({ session, onLogout }) {
     }
 
     return '-'
-  }
+  }, [classes])
 
   const filteredUsers = useMemo(() => {
     const query = userSearch.trim().toLowerCase()
@@ -734,7 +734,7 @@ function AdminDashboard({ session, onLogout }) {
         .toLowerCase()
         .includes(query)
     })
-  }, [roleFilter, userSearch, users, classes])
+  }, [formatUserClasses, roleFilter, userSearch, users])
 
   const deleteClass = async (classId) => {
     const confirmed = window.confirm(
@@ -1273,7 +1273,7 @@ function AdminDashboard({ session, onLogout }) {
                   <table>
                     <thead>
                       <tr>
-                        <th>Class Name</th> {/* Changed from separate Grade/Section headers */}
+                        <th>Class Name</th>
                         <th>Teacher</th>
                         <th>Students</th>
                         <th>Actions</th>
