@@ -51,14 +51,28 @@ function AdminDashboard({ session, onLogout }) {
   // Student filter state
   const [studentFilterGrade, setStudentFilterGrade] = useState('')
   const [studentFilterSection, setStudentFilterSection] = useState('')
+  const [studentFilterName, setStudentFilterName] = useState('')
 
   const filteredStudents = useMemo(() => {
+    const isFiltering = studentFilterGrade.trim() !== '' || studentFilterSection.trim() !== '' || studentFilterName.trim() !== '';
+
     return users
       .filter((u) => u.role === 'Student')
-      .filter((u) => !studentFilterGrade || (u.class_name || '').toLowerCase().includes(studentFilterGrade.toLowerCase()))
-      .filter((u) => !studentFilterSection || (u.class_name || '').toLowerCase().includes(studentFilterSection.toLowerCase()))
-      .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`))
-  }, [users, studentFilterGrade, studentFilterSection])
+      .filter((u) => {
+        if (!isFiltering) {
+          return !u.class_id;
+        }
+        let matches = true;
+        if (studentFilterGrade.trim()) matches = matches && (u.class_name || '').toLowerCase().includes(studentFilterGrade.toLowerCase());
+        if (studentFilterSection.trim()) matches = matches && (u.class_name || '').toLowerCase().includes(studentFilterSection.toLowerCase());
+        if (studentFilterName.trim()) {
+          const fullName = `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase();
+          matches = matches && fullName.includes(studentFilterName.toLowerCase());
+        }
+        return matches;
+      })
+      .sort((a, b) => `${a.first_name || ''} ${a.last_name || ''}`.localeCompare(`${b.first_name || ''} ${b.last_name || ''}`))
+  }, [users, studentFilterGrade, studentFilterSection, studentFilterName])
 
   const fetchAnalytics = useCallback(async () => {
     const result = await apiRequest('/api/admin/dashboard/analytics', {
@@ -1165,6 +1179,15 @@ function AdminDashboard({ session, onLogout }) {
 
                   <div className="filters form-grid">
                     <div className="field-row">
+                      <label className="field">
+                        Filter by Name
+                        <input
+                          type="text"
+                          placeholder="Search first or last name..."
+                          value={studentFilterName}
+                          onChange={(e) => setStudentFilterName(e.target.value)}
+                        />
+                      </label>
                       <label className="field">
                         Filter by Class
                         <input

@@ -10,6 +10,13 @@ import UnauthorizedPage from './pages/UnauthorizedPage'
 import { changePassword, loginUser } from './lib/api'
 import { clearSession, createSessionFromToken, loadSession, saveSession } from './lib/auth'
 
+const getDashboardPath = (role) => {
+  if (role === 'Admin') return '/admin'
+  if (role === 'Teacher') return '/teacher'
+  if (role === 'Parent') return '/parent'
+  return '/login'
+}
+
 function App() {
   const navigate = useNavigate()
   const [session, setSession] = useState(() => loadSession())
@@ -18,10 +25,7 @@ function App() {
   const [passwordChange, setPasswordChange] = useState(null)
 
   const homePath = useMemo(() => {
-    if (session?.role === 'Admin') return '/admin'
-    if (session?.role === 'Teacher') return '/teacher'
-    if (session?.role === 'Parent') return '/parent'
-    return '/login'
+    return getDashboardPath(session?.role)
   }, [session])
 
   const handleLogout = () => {
@@ -38,8 +42,10 @@ function App() {
       setIsSubmitting(true)
       const response = await loginUser(username, password)
       const nextSession = createSessionFromToken(response.access_token, username, response.user)
+      const mustChangePassword = response.must_change_password || response.mustChangePassword
+      const canDeferPasswordChange = ['Teacher', 'Parent'].includes(nextSession.role)
 
-      if (response.must_change_password || response.mustChangePassword) {
+      if (mustChangePassword && !canDeferPasswordChange) {
         setPasswordChange({
           token: response.access_token,
           username,
@@ -49,17 +55,14 @@ function App() {
         return
       }
 
+      setPasswordChange(null)
       setSession(nextSession)
       saveSession(nextSession)
 
-      // REDIRECT LOGIC FIX:
-      if (nextSession.role === 'Admin') {
-        navigate('/admin', { replace: true })
-      } else if (nextSession.role === 'Teacher') {
-        navigate('/teacher', { replace: true })
-      } else if (nextSession.role === 'Parent') {
-        navigate('/parent', { replace: true }) // Added this redirect
-      }
+      navigate(getDashboardPath(nextSession.role), {
+        replace: true,
+        state: canDeferPasswordChange && mustChangePassword ? { passwordReminder: true } : undefined,
+      })
     } catch (error) {
       setLoginError(error.message)
     } finally {
@@ -77,13 +80,7 @@ function App() {
       setSession(passwordChange.session)
       saveSession(passwordChange.session)
 
-      if (passwordChange.session.role === 'Admin') {
-        navigate('/admin', { replace: true })
-      } else if (passwordChange.session.role === 'Teacher') {
-        navigate('/teacher', { replace: true })
-      } else if (passwordChange.session.role === 'Parent') {
-        navigate('/parent', { replace: true })
-      }
+      navigate(getDashboardPath(passwordChange.session.role), { replace: true })
 
       setPasswordChange(null)
     } catch (error) {

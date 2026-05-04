@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import DashboardShell from '../components/DashboardShell'
 import { getParentStats, linkChild, unlinkChild, apiRequest } from '../lib/api'
 
+const passwordReminderText = 'For better account security, you can update your password anytime in My Profile.'
+
 function ParentDashboard({ session, onLogout }) {
+  const location = useLocation()
   const [childrenStats, setChildrenStats] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
+  const [successMessage, setSuccessMessage] = useState(() =>
+    location.state?.passwordReminder ? passwordReminderText : '',
+  )
   const [childUsername, setChildUsername] = useState('')
   const [linking, setLinking] = useState(false)
   const [selectedChildUsername, setSelectedChildUsername] = useState('')
@@ -23,6 +29,13 @@ function ParentDashboard({ session, onLogout }) {
   const [activeTeacher, setActiveTeacher] = useState(null)
   const [replyText, setReplyText] = useState('')
   const [sendingReply, setSendingReply] = useState(false)
+
+  useEffect(() => {
+    if (successMessage !== passwordReminderText) return
+
+    const timer = setTimeout(() => setSuccessMessage(''), 6000)
+    return () => clearTimeout(timer)
+  }, [successMessage])
 
   const loadStats = useCallback(async () => {
     try {

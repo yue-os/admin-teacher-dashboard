@@ -1,12 +1,46 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import DashboardShell from '../components/DashboardShell'
 import { apiRequest } from '../lib/api'
 
+const passwordReminderText = 'For better account security, you can update your password anytime in My Profile.'
+const apiEndpoint = (() => {
+  try {
+    const apiUrl = new URL(import.meta.env.VITE_API_BASE_URL || window.location.origin)
+    return {
+      ip: apiUrl.hostname,
+      port: apiUrl.port || (apiUrl.protocol === 'https:' ? '443' : '80'),
+    }
+  } catch {
+    return { ip: '', port: '' }
+  }
+})()
+
+const getGeneratedLobbyPort = (lobbies) => {
+  const basePort = Number(apiEndpoint.port) || 5000
+  const usedPorts = new Set(
+    lobbies
+      .filter((lobby) => !apiEndpoint.ip || String(lobby.ip) === String(apiEndpoint.ip))
+      .map((lobby) => Number(lobby.port))
+      .filter((port) => Number.isInteger(port) && port > 0),
+  )
+
+  let nextPort = basePort
+  while (usedPorts.has(nextPort)) {
+    nextPort += 1
+  }
+
+  return nextPort
+}
+
 function TeacherDashboard({ session, onLogout }) {
+  const location = useLocation()
   const [overview, setOverview] = useState({ classes: [], students: [], parents: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
+  const [successMessage, setSuccessMessage] = useState(() =>
+    location.state?.passwordReminder ? passwordReminderText : '',
+  )
 
   // UI & Feature States
   const [selectedClassId, setSelectedClassId] = useState('')
@@ -38,11 +72,10 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
   const [lobbies, setLobbies] = useState([])
   const [loadingLobbies, setLoadingLobbies] = useState(false)
   const [savingLobby, setSavingLobby] = useState(false)
+  const [lastHostedLobby, setLastHostedLobby] = useState(null)
   const [lobbyForm, setLobbyForm] = useState({
     name: '',
-    ip: '',
-    port: '',
-    requiredPlayers: 2,
+    requiredPlayers: 4,
   })
 
   const SAMPLE_QUIZZES = useMemo(() => [
@@ -194,6 +227,13 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
   const [profile, setProfile] = useState(null)
   const [updatingProfile, setUpdatingProfile] = useState(false)
 
+  useEffect(() => {
+    if (successMessage !== passwordReminderText) return
+
+    const timer = setTimeout(() => setSuccessMessage(''), 6000)
+    return () => clearTimeout(timer)
+  }, [successMessage])
+
   const SMART_SUGGESTIONS = [
     "Your child is doing well in quizzes.",
     "Your child needs improvement in recent activities.",
@@ -272,7 +312,10 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
   }, [session.token])
 
   useEffect(() => {
-    void fetchAnnouncements()
+    const timer = setTimeout(() => {
+      void fetchAnnouncements()
+    }, 0)
+    return () => clearTimeout(timer)
   }, [fetchAnnouncements])
 
   // Fetch quizzes when selectedClassId changes
@@ -540,7 +583,7 @@ const createQuiz = async (event) => {
   }
 };
 
-  const openFeedbackComposer = (quizResult, recipientType) => {
+  const openFeedbackComposer = (quizResult) => {
     const recipientName = quizResult.student_name || quizResult.student_username || 'Student'
 
     const studentName = quizResult.student_name || quizResult.student_username || 'the student'
@@ -702,10 +745,17 @@ const createQuiz = async (event) => {
     return lobbies.filter((lobby) => String(lobby.classId) === String(selectedClassId))
   }, [lobbies, selectedClassId])
 
+  const generatedLobbyEndpoint = useMemo(() => {
+    return {
+      ip: apiEndpoint.ip,
+      port: getGeneratedLobbyPort(lobbies),
+    }
+  }, [lobbies])
+
   const normalizeLobby = useCallback((lobby, serverStatus = null) => {
     const status = serverStatus?.status || (serverStatus?.online ? 'Not yet started' : 'Created')
     const currentPlayers = serverStatus?.current_players ?? serverStatus?.count ?? lobby.player_count ?? 0
-    const requiredPlayers = serverStatus?.required_players ?? lobby.required_players ?? 2
+    const requiredPlayers = serverStatus?.required_players ?? lobby.required_players ?? 4
 
     return {
       id: lobby.public_id || lobby.id,
@@ -783,11 +833,11 @@ const createQuiz = async (event) => {
       return
     }
 
-    const port = Number(lobbyForm.port)
-    const requiredPlayers = Number(lobbyForm.requiredPlayers)
-    if (!lobbyForm.ip.trim() || !Number.isInteger(port) || port <= 0) {
-      setError('Enter the game server IP and a valid port.')
-      return
+    const selectedPlayers = Number(lobbyForm.requiredPlayers)
+    const requiredPlayers = selectedPlayers + 1
+    const lobbyEndpoint = {
+      ip: generatedLobbyEndpoint.ip,
+      port: generatedLobbyEndpoint.port,
     }
 
     try {
@@ -801,19 +851,23 @@ const createQuiz = async (event) => {
         body: {
           class_public_id: classPublicId,
           name: lobbyForm.name.trim() || `${currentClass?.name || 'Class'} Lobby`,
-          ip: lobbyForm.ip.trim(),
-          port,
-          player_count: Number.isInteger(requiredPlayers) && requiredPlayers > 0 ? requiredPlayers : 2,
+          ip: lobbyEndpoint.ip,
+          port: lobbyEndpoint.port,
+          player_count: requiredPlayers,
+          required_players: requiredPlayers,
         },
       })
 
       const nextLobby = normalizeLobby(result.lobby)
+      setLastHostedLobby(nextLobby)
       setLobbies((current) => [
         nextLobby,
         ...current.filter((lobby) => lobby.publicId !== nextLobby.publicId),
       ])
-      setLobbyForm({ name: '', ip: '', port: '', requiredPlayers: 2 })
-      setSuccessMessage(result.message || 'Lobby hosted successfully.')
+      setLobbyForm({ name: '', requiredPlayers: 4 })
+      setSuccessMessage(
+        `${result.message || 'Lobby hosted successfully.'} Endpoint: ${nextLobby.ip}:${nextLobby.port}. Total slots: ${requiredPlayers}`,
+      )
       setTimeout(() => setSuccessMessage(''), 3000)
       await fetchLobbies()
     } catch (err) {
@@ -1176,7 +1230,9 @@ const createQuiz = async (event) => {
                 <section className="two-col">
                   <article className="panel">
                     <h2>Notice Board</h2>
-                    {announcements.filter((a) => String(a.class_id) === String(selectedClassId)).length === 0 ? (
+                    {loadingAnnouncements ? (
+                      <p className="info-text">Loading announcements...</p>
+                    ) : announcements.filter((a) => String(a.class_id) === String(selectedClassId)).length === 0 ? (
                       <p className="info-text">No announcements posted for this class yet.</p>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -1241,7 +1297,7 @@ const createQuiz = async (event) => {
                     <div className="panel-head">
                       <div>
                         <h2>Host a Lobby</h2>
-                        <p className="subtitle">Register one or more game-server lobbies for this class.</p>
+                        <p className="subtitle">Create a game lobby for this class.</p>
                       </div>
                       <span className="badge">{classLobbies.filter((lobby) => lobby.joinable).length} joinable</span>
                     </div>
@@ -1256,44 +1312,50 @@ const createQuiz = async (event) => {
                         />
                       </label>
 
+                      <label className="field">
+                        Required players
+                        <select
+                          value={lobbyForm.requiredPlayers}
+                          onChange={(e) => setLobbyForm((current) => ({ ...current, requiredPlayers: e.target.value }))}
+                        >
+                          <option value="4">4 Players</option>
+                          <option value="5">5 Players</option>
+                          <option value="6">6 Players</option>
+                          <option value="7">7 Players</option>
+                          <option value="8">8 Players</option>
+                        </select>
+                      </label>
+
                       <div className="field-row">
                         <label className="field">
                           Server IP
-                          <input
-                            value={lobbyForm.ip}
-                            onChange={(e) => setLobbyForm((current) => ({ ...current, ip: e.target.value }))}
-                            placeholder="e.g. 192.168.1.7"
-                            required
-                          />
+                          <input value={generatedLobbyEndpoint.ip || 'Generated after hosting'} readOnly />
                         </label>
 
                         <label className="field">
                           Port
-                          <input
-                            type="number"
-                            min="1"
-                            value={lobbyForm.port}
-                            onChange={(e) => setLobbyForm((current) => ({ ...current, port: e.target.value }))}
-                            placeholder="e.g. 7777"
-                            required
-                          />
+                          <input value={generatedLobbyEndpoint.port || 'Generated after hosting'} readOnly />
                         </label>
                       </div>
 
                       <label className="field">
-                        Required players
-                        <input
-                          type="number"
-                          min="2"
-                          max="60"
-                          value={lobbyForm.requiredPlayers}
-                          onChange={(e) => setLobbyForm((current) => ({ ...current, requiredPlayers: e.target.value }))}
-                        />
+                        Total required slots
+                        <input value={Number(lobbyForm.requiredPlayers) + 1} readOnly />
                       </label>
 
-                      <p className="info-text">
-                        Start the game server first. This dashboard registers the server endpoint and links it to the selected class.
-                      </p>
+                      {lastHostedLobby && String(lastHostedLobby.classId) === String(selectedClassId) && (
+                        <div className="lobby-code-row">
+                          <span>Generated endpoint</span>
+                          <strong>{lastHostedLobby.ip}:{lastHostedLobby.port}</strong>
+                          <button
+                            className="btn btn-ghost"
+                            type="button"
+                            onClick={() => copyLobbyCode(`${lastHostedLobby.ip}:${lastHostedLobby.port}`)}
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      )}
 
                       <button className="btn btn-primary" type="submit" disabled={savingLobby}>
                         {savingLobby ? 'Hosting...' : 'Host Lobby'}
@@ -1400,7 +1462,7 @@ const createQuiz = async (event) => {
                   <td>{result.submitted_at ? new Date(result.submitted_at).toLocaleString() : 'Unknown'}</td>
                   <td>
                     <div className="flex-row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <button className="btn btn-ghost" onClick={() => openFeedbackComposer(result, 'student')}>
+                      <button className="btn btn-ghost" onClick={() => openFeedbackComposer(result)}>
                         Feedback Student
                       </button>
                       <button
