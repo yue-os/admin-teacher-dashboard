@@ -1757,80 +1757,64 @@ const createQuiz = async (event) => {
                       </label>
 
                       {lastHostedLobby && String(lastHostedLobby.classId) === String(selectedClassId) && (
-                        <div className="lobby-code-row">
-                          <span>Generated endpoint</span>
-                          <strong>{lastHostedLobby.ip}:{lastHostedLobby.port}</strong>
-                          <button
-                            className="btn btn-ghost"
-                            type="button"
-                            onClick={() => copyLobbyCode(`${lastHostedLobby.ip}:${lastHostedLobby.port}`)}
-                          >
-                            Copy
-                          </button>
+                        <div className="success-text panel" style={{ marginTop: '1rem', background: 'rgba(164, 198, 57, 0.1)', borderColor: 'var(--success)' }}>
+                          <p style={{ margin: 0 }}><strong>Lobby Active:</strong> {lastHostedLobby.name}</p>
+                          <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            Join Code: <code style={{ userSelect: 'all', fontSize: '1.2rem', padding: '0.2rem 0.5rem', background: '#fff', border: '1px solid #ccc' }}>{lastHostedLobby.ip}:{lastHostedLobby.port}</code>
+                            <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => copyLobbyCode(`${lastHostedLobby.ip}:${lastHostedLobby.port}`)}>Copy</button>
+                          </p>
                         </div>
                       )}
-
-                      <button className="btn btn-primary" type="submit" disabled={savingLobby}>
-                        {savingLobby ? 'Hosting...' : 'Host Lobby'}
-                      </button>
+                      
+                      <div className="form-actions" style={{ marginTop: '1.5rem' }}>
+                        <button type="submit" className="btn btn-primary" disabled={savingLobby}>
+                          {savingLobby ? 'Starting Server...' : 'Start Lobby Server'}
+                        </button>
+                      </div>
                     </form>
                   </article>
 
-                  <article className="panel lobby-list-panel">
+                  <article className="panel">
                     <div className="panel-head">
-                      <h2>Hosted Lobbies</h2>
-                      <div className="flex-row">
-                        <span className="badge">{classLobbies.length}</span>
-                        <button className="btn btn-ghost" type="button" onClick={fetchLobbies} disabled={loadingLobbies}>
-                          {loadingLobbies ? 'Refreshing...' : 'Refresh'}
-                        </button>
-                      </div>
+                      <h2>Active Class Lobbies</h2>
+                      <button className="btn btn-secondary" onClick={fetchLobbies} disabled={loadingLobbies}>
+                        {loadingLobbies ? 'Refreshing...' : 'Refresh'}
+                      </button>
                     </div>
 
                     {loadingLobbies ? (
-                      <p className="info-text">Loading hosted lobbies...</p>
+                      <p className="info-text">Loading lobbies...</p>
                     ) : classLobbies.length === 0 ? (
-                      <p className="info-text">No lobbies hosted for this class yet.</p>
+                      <p className="info-text">No active lobbies for this class.</p>
                     ) : (
-                      <div className="lobby-list">
+                      <div className="lobby-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
                         {classLobbies.map((lobby) => (
-                          <article key={lobby.publicId || lobby.id} className={`lobby-card ${!lobby.joinable ? 'closed' : ''}`}>
-                            <div className="lobby-card-head">
+                          <div key={lobby.publicId} className="lobby-card" style={{ padding: '1.25rem', border: '1px solid var(--border-color)', borderRadius: '8px', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
                               <div>
-                                <h3>{lobby.name}</h3>
-                                <p>{lobby.className}</p>
+                                <h3 style={{ margin: '0 0 0.25rem 0' }}>{lobby.name}</h3>
+                                <span className={`status-indicator ${lobby.online ? 'online' : 'offline'}`}>
+                                  {lobby.status}
+                                </span>
                               </div>
-                              <span className={`lobby-status ${lobby.joinable ? 'open' : 'closed'}`}>{lobby.status}</span>
-                            </div>
-
-                            <div className="lobby-code-row">
-                              <span>Endpoint</span>
-                              <strong>{lobby.ip}:{lobby.port}</strong>
-                            </div>
-
-                            <div className="lobby-meta-grid">
-                              <div>
-                                <span>Players</span>
-                                <strong>{lobby.currentPlayers}/{lobby.requiredPlayers}</strong>
-                              </div>
-                              <div>
-                                <span>Lobby ID</span>
-                                <strong>{lobby.publicId || lobby.numericId}</strong>
-                              </div>
-                            </div>
-
-                            <div className="lobby-actions">
-                              <button className="btn btn-ghost" type="button" onClick={() => copyLobbyCode(`${lobby.ip}:${lobby.port}`)}>
-                                Copy Endpoint
-                              </button>
-                              <button className="btn btn-ghost" type="button" onClick={() => copyLobbyCode(lobby.publicId || lobby.id)}>
-                                Copy Lobby ID
-                              </button>
-                              <button className="btn btn-danger" type="button" onClick={() => removeLobby(lobby.publicId)}>
-                                Remove
+                              <button 
+                                type="button" 
+                                className="btn btn-danger" 
+                                onClick={() => removeLobby(lobby.publicId)}
+                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.875rem' }}
+                              >
+                                Close
                               </button>
                             </div>
-                          </article>
+                            
+                            <div className="lobby-details" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: 'var(--text-light)', marginTop: '1rem' }}>
+                              <span><strong>Players:</strong> {lobby.currentPlayers} / {lobby.requiredPlayers}</span>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <strong>Code:</strong> 
+                                <code style={{ userSelect: 'all', background: '#f5f5f5', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>{lobby.ip}:{lobby.port}</code>
+                              </span>
+                            </div>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -1838,427 +1822,342 @@ const createQuiz = async (event) => {
                 </section>
               )}
 
-{/* ... other tabs (analytics, students, etc) ... */}
-
-{activeTab === 'quizzes' && (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-
-    <article className="panel">
-      <div className="panel-head">
-        <h2>Completed Quizzes</h2>
-        <span className="badge">{completedQuizResults.length}</span>
-      </div>
-      {loadingCompletedQuizResults ? (
-        <p className="info-text">Loading completed quizzes...</p>
-      ) : displayQuizResults.length === 0 ? (
-        <p className="info-text">No completed quiz submissions found for this class yet.</p>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Quiz</th>
-                <th>Student</th>
-                <th>Parent</th>
-                <th>Score</th>
-                <th>Submitted</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayQuizResults.map((result) => (
-                <tr key={result.id || `${result.quiz_id}-${result.student_id}-${result.submitted_at}`}> 
-                  <td>{result.quiz_title}</td>
-                  <td>{result.student_name || result.student_username}</td>
-                  <td>{result.parent_name || 'No parent linked'}</td>
-                  <td>{Number(result.score ?? 0).toFixed(1)}%</td>
-                  <td>{result.submitted_at ? new Date(result.submitted_at).toLocaleString() : 'Unknown'}</td>
-                  <td>
-                    <div className="flex-row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <button className="btn btn-ghost" onClick={() => openFeedbackComposer(result)}>
-                        Feedback Student
-                      </button>
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => allowQuizRetake(result)}
-                      >
-                        Allow Retake
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </article>
-
-    {feedbackDraft && (
-      <article className="panel">
-        <div className="panel-head">
-          <h2>Send Quiz Feedback</h2>
-          <button className="btn btn-ghost" onClick={() => setFeedbackDraft(null)}>Cancel</button>
-        </div>
-        <form className="form-grid" onSubmit={sendQuizFeedback}>
-          <div className="field-row">
-            <label className="field">
-              Recipient
-              <input value={feedbackDraft.quizResult.student_name || feedbackDraft.quizResult.student_username || 'Student'} readOnly />
-            </label>
-            <label className="field">
-              Quiz
-              <input value={feedbackDraft.quizResult.quiz_title} readOnly />
-            </label>
-          </div>
-          <label className="field">
-            Feedback Message
-            <textarea
-              rows={6}
-              value={feedbackDraft.message}
-              onChange={(e) => setFeedbackDraft((current) => ({ ...current, message: e.target.value }))}
-              placeholder="Write the feedback you want to send..."
-              required
-            />
-          </label>
-          <div className="flex-row" style={{ justifyContent: 'flex-start' }}>
-            <button className="btn btn-primary" type="submit" disabled={sendingFeedback}>
-              {sendingFeedback ? 'Sending...' : 'Send Feedback'}
-            </button>
-          </div>
-        </form>
-      </article>
-    )}
-    
-    {/* NEW: EXISTING QUIZZES LIST */}
-    <article className="panel">
-      <div className="panel-head">
-        <h2>Manage Published Quizzes</h2>
-        {editingQuizId && (
-          <button className="btn btn-ghost" onClick={() => {
-            setEditingQuizId(null);
-            setQuizForm({ title: '', timer_seconds: 300, start_date: '' });
-            setQuizQuestions([]);
-          }}>
-            + Create New Instead
-          </button>
-        )}
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Questions</th>
-              <th>Start Date</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-          {displayQuizzes
-            .filter(q => !selectedClassId || !q.class_id || String(q.class_id) === String(selectedClassId))
-            .map((quiz) => (
-              <tr key={quiz.id || quiz._id}>
-                <td>{quiz.title}</td>
-                <td>{quiz.questions?.length || 0}</td>
-                <td>{quiz.start_date ? new Date(quiz.start_date).toLocaleDateString() : 'No date set'}</td>
-                <td>
-                  <div className="flex-row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <button className="btn btn-ghost" onClick={() => loadQuizForEdit(quiz)}>
-                      Edit & Re-upload
-                    </button>
-                    <button className="btn btn-secondary" onClick={() => setRetakeQuiz(quiz)}>
-                      Retakes
-                    </button>
-                    <button className="btn btn-danger" onClick={() => deleteQuiz(quiz)}>
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-        </tbody>
-        </table>
-      </div>
-    </article>
-
-    {retakeQuiz && (
-      <article className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Manage Retakes</h2>
-            <p className="subtitle">{retakeQuiz.title}</p>
-          </div>
-          <button className="btn btn-ghost" type="button" onClick={() => setRetakeQuiz(null)}>
-            Close
-          </button>
-        </div>
-
-        {displayQuizResults.filter((result) => String(result.quiz_id) === String(retakeQuiz.id || retakeQuiz._id)).length === 0 ? (
-          <p className="info-text">No submitted students for this quiz yet.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Student</th>
-                  <th>Score</th>
-                  <th>Submitted</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayQuizResults
-                  .filter((result) => String(result.quiz_id) === String(retakeQuiz.id || retakeQuiz._id))
-                  .map((result) => (
-                    <tr key={result.id || `${result.quiz_id}-${result.student_id}`}>
-                      <td>{result.student_name || result.student_username}</td>
-                      <td>{Number(result.score ?? 0).toFixed(1)}%</td>
-                      <td>{result.submitted_at ? new Date(result.submitted_at).toLocaleString() : 'Unknown'}</td>
-                      <td>
-                        <button className="btn btn-secondary" type="button" onClick={() => allowQuizRetake(result)}>
-                          Allow Retake
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </article>
-    )}
-
-    {/* QUIZ BUILDER SECTION */}
-    <section className="quiz-builder-container" style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '2rem', alignItems: 'start' }}>
-      
-      {/* LEFT PANEL: Question List (Sidebar) */}
-      <aside className="panel" style={{ position: 'sticky', top: '2rem', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-        <div className="panel-head">
-          <h2>Quiz Questions</h2>
-          <span className="badge">{quizQuestions.length}</span>
-        </div>
-
-        <div style={{ overflowY: 'auto', flexGrow: 1, paddingRight: '0.5rem' }}>
-          {quizQuestions.length === 0 ? (
-            <p className="info-text">No questions yet.</p>
-          ) : (
-            quizQuestions.map((q, index) => (
-              <div 
-                key={q.id}
-                onClick={() => setActiveQuestionId(q.id)}
-                style={{
-                  padding: '1rem',
-                  background: activeQuestionId === q.id ? 'var(--bg-hover, #f0f4ff)' : '#fff',
-                  border: activeQuestionId === q.id ? '2px solid var(--primary)' : '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  marginBottom: '0.75rem',
-                  cursor: 'pointer'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <strong style={{ fontSize: '0.9rem' }}>{index + 1}. {q.text || 'Untitled Question'}</strong>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); removeQuestion(q.id); }}
-                    style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer' }}
-                  >✕</button>
-                </div>
-                <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '0.7rem', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>
-                    {q.type === 'multiple_choice' ? 'MCQ' : 'ID'}
-                  </span>
-                  <span style={{ fontSize: '0.7rem', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>
-                    {q.points || 1} pts
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        <button 
-          className="btn btn-ghost" 
-          onClick={addQuestion}
-          style={{ marginTop: '1rem', border: '2px dashed #cbd5e1', width: '100%' }}
-        >
-          + Add Question
-        </button>
-      </aside>
-
-      {/* RIGHT PANEL: Question Editor & Quiz Settings */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        
-        {/* Quiz Global Settings */}
-        <article className="panel">
-          <h2>Quiz Details</h2>
-          <div className="form-grid">
-            <label className="field">
-              Quiz Title
-              <input name="title" value={quizForm.title} onChange={onQuizChange} placeholder="e.g. Science Review - Week 4" required />
-            </label>
-            <div className="field-row">
-              <label className="field">Timer (s)</label>
-              <input name="timer_seconds" type="number" value={quizForm.timer_seconds} onChange={onQuizChange} />
-              <label className="field">Start Date</label>
-              <input name="start_date" type="datetime-local" value={quizForm.start_date} onChange={onQuizChange} />
-            </div>
-          </div>
-        </article>
-
-        {/* Dynamic Question Editor */}
-        <article className="panel" style={{ minHeight: '400px' }}>
-          {activeQuestionId ? (
-            (() => {
-              const q = quizQuestions.find(curr => curr.id === activeQuestionId);
-              if (!q) return <p>Select a question to edit.</p>;
-              return (
-                <div className="form-grid">
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <h2>Edit Question</h2>
-                    <label className="field" style={{ width: '100px' }}>
-                      Points
-                      <input 
-                        type="number" 
-                        value={q.points || 1} 
-                        onChange={(e) => updateQuestion(q.id, 'points', e.target.value)} 
-                      />
-                    </label>
-                  </div>
-
-                  <label className="field">
-                    Question Text
-                    <textarea 
-                      value={q.text} 
-                      onChange={(e) => updateQuestion(q.id, 'text', e.target.value)}
-                      placeholder="Type your question here..."
-                      style={{ height: '80px' }}
-                    />
-                  </label>
-
-                  <label className="field">
-                    Answer Type
-                    <select value={q.type} onChange={(e) => updateQuestion(q.id, 'type', e.target.value)}>
-                      <option value="multiple_choice">Multiple Choice</option>
-                      <option value="identification">Identification</option>
-                    </select>
-                  </label>
-
-                  {q.type === 'multiple_choice' && (
-                    <div style={{ marginTop: '1rem' }}>
-                      <p style={{ fontWeight: 'bold', marginBottom: '1rem' }}>Choices</p>
-                      {q.options.map((opt, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
-                          <input 
-                            type="radio" 
-                            name={`correct_${q.id}`} 
-                            checked={q.correct_answer === i.toString()} 
-                            onChange={() => updateQuestion(q.id, 'correct_answer', i.toString())}
-                          />
-                          <input 
-                            className="field" 
-                            style={{ margin: 0 }} 
-                            value={opt} 
-                            onChange={(e) => updateOption(q.id, i, e.target.value)} 
-                            placeholder={`Option ${i + 1}`}
-                          />
+              {activeTab === 'quizzes' && (
+                <section className="quizzes-dashboard">
+                  <div className="two-col">
+                    <article className="panel">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <div>
+                          <h2 style={{ margin: 0 }}>Class Quizzes</h2>
+                          <p className="subtitle" style={{ margin: '0.25rem 0 0' }}>Manage assessments for {currentClass?.name}</p>
                         </div>
-                      ))}
+                        <button 
+                          className="btn btn-primary"
+                          onClick={() => {
+                            setEditingQuizId(null);
+                            setQuizForm({ title: '', timer_seconds: 300, start_date: '' });
+                            setQuizQuestions([]);
+                            setActiveQuestionId(null);
+                            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+                          }}
+                        >
+                          + New Quiz
+                        </button>
+                      </div>
+
+                      {displayQuizzes.length === 0 ? (
+                        <p className="info-text">No quizzes have been created yet.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                          {displayQuizzes.map((quiz) => (
+                            <div key={quiz.id} style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: '8px', background: '#fff' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                                <div>
+                                  <h3 style={{ margin: '0 0 0.25rem 0' }}>{quiz.title}</h3>
+                                  <div style={{ fontSize: '0.875rem', color: 'var(--text-light)', display: 'flex', gap: '1rem' }}>
+                                    <span>⏱️ {Math.floor(quiz.timer_seconds / 60)} mins</span>
+                                    <span>📝 {quiz.questions?.length || 0} questions</span>
+                                    <span>📅 {quiz.start_date ? new Date(quiz.start_date).toLocaleDateString() : 'No date'}</span>
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                  <button className="btn btn-secondary" onClick={() => loadQuizForEdit(quiz)} style={{ padding: '0.25rem 0.5rem' }}>Edit</button>
+                                  <button className="btn btn-danger" onClick={() => deleteQuiz(quiz)} style={{ padding: '0.25rem 0.5rem' }}>Delete</button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+
+                    <article className="panel">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h2 style={{ margin: 0 }}>Recent Submissions</h2>
+                      </div>
+
+                      {loadingCompletedQuizResults ? (
+                        <p className="info-text">Loading results...</p>
+                      ) : displayQuizResults.length === 0 ? (
+                        <p className="info-text">No recent submissions found.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                          {displayQuizResults.map((result) => (
+                            <div key={result.id} style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: '8px', background: '#f9fafb' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                <strong>{result.student_name}</strong>
+                                <span className={`badge ${result.score >= 75 ? 'success' : result.score >= 50 ? 'warning' : 'danger'}`}>
+                                  {result.score}%
+                                </span>
+                              </div>
+                              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'var(--text-light)' }}>{result.quiz_title}</p>
+                              
+                              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                <button className="btn btn-secondary" onClick={() => openFeedbackComposer(result)} style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
+                                  Send Feedback
+                                </button>
+                                <button className="btn btn-secondary" onClick={() => allowQuizRetake(result)} style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
+                                  Allow Retake
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  </div>
+
+                  {/* QUIZ BUILDER UI */}
+                  <article className="panel" style={{ marginTop: '2rem' }}>
+                    <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                      <h2 style={{ margin: '0 0 0.5rem 0' }}>{editingQuizId ? 'Edit Quiz' : 'Create New Quiz'}</h2>
+                      <p className="subtitle" style={{ margin: 0 }}>Design your questions and set quiz parameters.</p>
                     </div>
-                  )}
 
-                  {q.type === 'identification' && (
-                    <label className="field">
-                      Correct Answer
-                      <input 
-                        value={q.correct_answer} 
-                        onChange={(e) => updateQuestion(q.id, 'correct_answer', e.target.value)} 
-                        placeholder="Enter the exact answer"
-                      />
-                    </label>
-                  )}
-                </div>
-              );
-            })()
-          ) : (
-            <div className="center-card" style={{ padding: '4rem' }}>
-              <p>No question selected. Click "Add Question" or select one from the list.</p>
-            </div>
-          )}
-        </article>
+                    <form onSubmit={createQuiz}>
+                      <div className="form-grid" style={{ marginBottom: '2rem', background: '#f9fafb', padding: '1.5rem', borderRadius: '8px' }}>
+                        <label className="field">
+                          <strong>Quiz Title *</strong>
+                          <input
+                            name="title"
+                            value={quizForm.title}
+                            onChange={onQuizChange}
+                            placeholder="e.g. Midterm Science Assessment"
+                            required
+                            style={{ padding: '0.75rem' }}
+                          />
+                        </label>
+                        
+                        <div className="field-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                          <label className="field">
+                            <strong>Time Limit (seconds) *</strong>
+                            <input
+                              type="number"
+                              name="timer_seconds"
+                              value={quizForm.timer_seconds}
+                              onChange={onQuizChange}
+                              min="30"
+                              required
+                              style={{ padding: '0.75rem' }}
+                            />
+                            <small style={{ color: 'var(--text-light)', marginTop: '0.25rem' }}>{Math.floor(quizForm.timer_seconds / 60)} minutes</small>
+                          </label>
 
-        <button 
-          className="btn btn-primary" 
-          style={{ alignSelf: 'flex-end', padding: '1rem 3rem' }} 
-          onClick={createQuiz} 
-          disabled={savingQuiz || quizQuestions.length === 0}
-        >
-          {savingQuiz ? 'Publishing...' : 'Finalize & Publish Quiz'}
-        </button>
-      </div>
-    </section>
-  </div>
-)}
+                          <label className="field">
+                            <strong>Scheduled Start Date</strong>
+                            <input
+                              type="datetime-local"
+                              name="start_date"
+                              value={quizForm.start_date}
+                              onChange={onQuizChange}
+                              style={{ padding: '0.75rem' }}
+                            />
+                            <small style={{ color: 'var(--text-light)', marginTop: '0.25rem' }}>Leave blank to start immediately</small>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="quiz-questions-builder">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                          <h3 style={{ margin: 0 }}>Questions ({quizQuestions.length})</h3>
+                          <button type="button" className="btn btn-secondary" onClick={addQuestion} style={{ fontWeight: 'bold' }}>
+                            + Add Question
+                          </button>
+                        </div>
+
+                        {quizQuestions.length === 0 ? (
+                          <div style={{ padding: '3rem', textAlign: 'center', background: '#f9fafb', borderRadius: '8px', border: '2px dashed var(--border-color)' }}>
+                            <p style={{ margin: '0 0 1rem 0', color: 'var(--text-light)' }}>No questions added yet.</p>
+                            <button type="button" className="btn btn-primary" onClick={addQuestion}>Start Adding Questions</button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                            {quizQuestions.map((q, index) => (
+                              <div key={q.id} style={{ 
+                                border: activeQuestionId === q.id ? '2px solid var(--primary)' : '1px solid var(--border-color)', 
+                                borderRadius: '8px', 
+                                padding: '1.5rem',
+                                background: activeQuestionId === q.id ? '#fdfdfd' : '#fff',
+                                transition: 'all 0.2s',
+                                position: 'relative'
+                              }}>
+                                <div style={{ position: 'absolute', top: '-10px', left: '1rem', background: activeQuestionId === q.id ? 'var(--primary)' : 'var(--border-color)', color: activeQuestionId === q.id ? '#fff' : '#666', padding: '0.2rem 0.75rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                  Question {index + 1}
+                                </div>
+                                
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+                                  <button type="button" onClick={() => removeQuestion(q.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '0.875rem' }}>
+                                    Remove
+                                  </button>
+                                </div>
+
+                                <div onClick={() => setActiveQuestionId(q.id)}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                                    <label className="field" style={{ margin: 0 }}>
+                                      Question Text
+                                      <textarea
+                                        value={q.text}
+                                        onChange={(e) => updateQuestion(q.id, 'text', e.target.value)}
+                                        placeholder="What is the capital of France?"
+                                        rows="2"
+                                        required
+                                        style={{ padding: '0.75rem' }}
+                                      />
+                                    </label>
+                                    
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                      <label className="field" style={{ margin: 0 }}>
+                                        Type
+                                        <select value={q.type} onChange={(e) => updateQuestion(q.id, 'type', e.target.value)} style={{ padding: '0.75rem' }}>
+                                          <option value="multiple_choice">Multiple Choice</option>
+                                          <option value="identification">Identification</option>
+                                          <option value="true_false">True / False</option>
+                                        </select>
+                                      </label>
+                                      
+                                      <label className="field" style={{ margin: 0 }}>
+                                        Points
+                                        <input
+                                          type="number"
+                                          value={q.points}
+                                          onChange={(e) => updateQuestion(q.id, 'points', Number(e.target.value))}
+                                          min="1"
+                                          required
+                                          style={{ padding: '0.75rem' }}
+                                        />
+                                      </label>
+                                    </div>
+                                  </div>
+
+                                  {q.type === 'multiple_choice' && (
+                                    <div style={{ background: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
+                                      <p style={{ margin: '0 0 0.75rem 0', fontWeight: 'bold', fontSize: '0.9rem' }}>Answer Options</p>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        {q.options.map((opt, optIndex) => (
+                                          <div key={optIndex} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: String(q.correct_answer) === String(optIndex) ? 'rgba(77, 182, 172, 0.15)' : '#fff', padding: '0.5rem', borderRadius: '4px', border: String(q.correct_answer) === String(optIndex) ? '1px solid var(--primary)' : '1px solid #ddd' }}>
+                                            <input
+                                              type="radio"
+                                              name={`correct-${q.id}`}
+                                              checked={String(q.correct_answer) === String(optIndex)}
+                                              onChange={() => updateQuestion(q.id, 'correct_answer', String(optIndex))}
+                                              style={{ margin: 0, width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
+                                            />
+                                            <input
+                                              value={opt}
+                                              onChange={(e) => updateOption(q.id, optIndex, e.target.value)}
+                                              placeholder={`Option ${optIndex + 1}`}
+                                              required
+                                              style={{ flexGrow: 1, border: 'none', background: 'transparent', outline: 'none', padding: '0.25rem' }}
+                                            />
+                                          </div>
+                                        ))}
+                                      </div>
+                                      <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-light)' }}>* Select the radio button next to the correct answer.</p>
+                                    </div>
+                                  )}
+
+                                  {q.type === 'true_false' && (
+                                    <div style={{ background: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
+                                      <p style={{ margin: '0 0 0.75rem 0', fontWeight: 'bold', fontSize: '0.9rem' }}>Correct Answer</p>
+                                      <div style={{ display: 'flex', gap: '1.5rem' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 1rem', background: '#fff', border: '1px solid #ddd', borderRadius: '4px' }}>
+                                          <input
+                                            type="radio"
+                                            name={`correct-${q.id}`}
+                                            checked={q.correct_answer === 'true'}
+                                            onChange={() => updateQuestion(q.id, 'correct_answer', 'true')}
+                                            style={{ margin: 0, width: '1.2rem', height: '1.2rem' }}
+                                          />
+                                          True
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 1rem', background: '#fff', border: '1px solid #ddd', borderRadius: '4px' }}>
+                                          <input
+                                            type="radio"
+                                            name={`correct-${q.id}`}
+                                            checked={q.correct_answer === 'false'}
+                                            onChange={() => updateQuestion(q.id, 'correct_answer', 'false')}
+                                            style={{ margin: 0, width: '1.2rem', height: '1.2rem' }}
+                                          />
+                                          False
+                                        </label>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {q.type === 'identification' && (
+                                    <div style={{ background: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
+                                      <label className="field" style={{ margin: 0 }}>
+                                        <strong style={{ fontSize: '0.9rem' }}>Exact Match Answer *</strong>
+                                        <input
+                                          value={q.correct_answer || ''}
+                                          onChange={(e) => updateQuestion(q.id, 'correct_answer', e.target.value)}
+                                          placeholder="e.g. Paris"
+                                          required
+                                          style={{ padding: '0.75rem', marginTop: '0.5rem' }}
+                                        />
+                                      </label>
+                                      <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-light)' }}>* Student's answer must match this exactly (case-insensitive).</p>
+                                    </div>
+                                  )}
+
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ marginTop: '2rem', padding: '1rem', background: 'rgba(77, 182, 172, 0.1)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <p style={{ margin: 0, fontWeight: 'bold' }}>Total Questions: {quizQuestions.length}</p>
+                          <p style={{ margin: 0, color: 'var(--text-light)', fontSize: '0.9rem' }}>Total Points: {quizQuestions.reduce((sum, q) => sum + (Number(q.points) || 0), 0)}</p>
+                        </div>
+                        <button type="submit" className="btn btn-primary" disabled={savingQuiz || quizQuestions.length === 0} style={{ padding: '0.75rem 2rem', fontSize: '1.1rem' }}>
+                          {savingQuiz ? 'Saving Quiz...' : editingQuizId ? 'Update Quiz' : 'Publish Quiz'}
+                        </button>
+                      </div>
+                    </form>
+                  </article>
+                </section>
+              )}
             </>
           )}
         </>
       )}
 
-      {teacherAnalyticsModal && (
-        <div className="analytics-modal-overlay" role="presentation" onClick={() => setTeacherAnalyticsModal(null)}>
-          <section className="analytics-modal panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-            <button className="analytics-modal-close" type="button" aria-label="Close analytics modal" onClick={() => setTeacherAnalyticsModal(null)}>
-              x
-            </button>
-            <div className="analytics-modal-head">
-              <span>{analyticsPeriod}</span>
-              <h2>{teacherAnalyticsConfig[teacherAnalyticsModal].title}</h2>
-              <p>{teacherAnalyticsConfig[teacherAnalyticsModal].subtitle}</p>
+      {feedbackDraft && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }} onClick={() => setFeedbackDraft(null)}>
+          <article className="panel" style={{ width: '95%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)' }}>
+              <h2 style={{ margin: 0 }}>Send Feedback</h2>
+              <button className="btn btn-ghost" type="button" onClick={() => setFeedbackDraft(null)} style={{ fontSize: '1.25rem', padding: '0.25rem 0.5rem' }}>✕</button>
             </div>
-            <div className="analytics-chart tall">
-              <ResponsiveContainer width="100%" height="100%">
-                {teacherAnalyticsConfig[teacherAnalyticsModal].type === 'count' ? (
-                  <BarChart data={teacherAnalyticsData[teacherAnalyticsModal]} margin={{ top: 12, right: 18, left: -12, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" />
-                    <YAxis
-                      allowDecimals={false}
-                      domain={[0, (max) => Math.max(4, max + 1)]}
-                      tickFormatter={(value) => `${value}${teacherAnalyticsConfig[teacherAnalyticsModal].suffix}`}
-                    />
-                    <RechartsTooltip
-                      formatter={(value) => `${value}${teacherAnalyticsConfig[teacherAnalyticsModal].suffix}`}
-                      cursor={{ fill: 'rgba(77, 182, 172, 0.08)' }}
-                    />
-                    <Bar
-                      dataKey={teacherAnalyticsConfig[teacherAnalyticsModal].dataKey}
-                      fill={teacherAnalyticsConfig[teacherAnalyticsModal].color}
-                      radius={[8, 8, 0, 0]}
-                      maxBarSize={56}
-                    />
-                  </BarChart>
-                ) : (
-                  <LineChart data={teacherAnalyticsData[teacherAnalyticsModal]} margin={{ top: 12, right: 18, left: -12, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" />
-                    <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
-                    <RechartsTooltip formatter={(value) => `${value}%`} />
-                    <Line
-                      type="monotone"
-                      dataKey={teacherAnalyticsConfig[teacherAnalyticsModal].dataKey}
-                      stroke={teacherAnalyticsConfig[teacherAnalyticsModal].color}
-                      strokeWidth={3}
-                      dot={{ r: 4 }}
-                      activeDot={{ r: 6 }}
-                    />
-                  </LineChart>
-                )}
-              </ResponsiveContainer>
+            <div style={{ marginBottom: '1.5rem' }}>
+              <p style={{ margin: '0 0 0.5rem 0' }}><strong>To:</strong> {feedbackDraft.quizResult.student_name || 'Student'}</p>
+              <p style={{ margin: 0 }}><strong>Subject:</strong> {feedbackDraft.quizResult.quiz_title} Results</p>
             </div>
-          </section>
+            <form onSubmit={sendQuizFeedback}>
+              <textarea
+                rows={8}
+                style={{ width: '100%', padding: '0.75rem', marginBottom: '1.5rem', boxSizing: 'border-box', fontFamily: 'inherit', borderRadius: '8px', border: '1px solid var(--border-color)' }}
+                value={feedbackDraft.message}
+                onChange={(e) => setFeedbackDraft({ ...feedbackDraft, message: e.target.value })}
+                required
+              />
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setFeedbackDraft(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={sendingFeedback}>
+                  {sendingFeedback ? 'Sending...' : 'Send Feedback'}
+                </button>
+              </div>
+            </form>
+          </article>
         </div>
       )}
     </DashboardShell>
-  );
+  )
 }
 
-export default TeacherDashboard;
+export default TeacherDashboard

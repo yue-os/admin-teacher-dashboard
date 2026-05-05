@@ -1184,7 +1184,8 @@ tr:last-child td {
 .chat-shell {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-  min-height: 720px;
+  height: min(720px, calc(100svh - 220px));
+  min-height: 0;
   margin-bottom: 18px;
   padding: 0;
   overflow: hidden;
@@ -1193,6 +1194,7 @@ tr:last-child td {
 
 .chat-sidebar {
   min-width: 0;
+  min-height: 0;
   border-right: 1px solid var(--border);
   background: #ffffff;
   display: grid;
@@ -1217,7 +1219,14 @@ tr:last-child td {
 }
 
 .chat-contact-list {
+  min-height: 0;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.chat-contact-list::-webkit-scrollbar {
+  display: none;
 }
 
 .chat-contact {
@@ -1344,6 +1353,7 @@ tr:last-child td {
 
 .chat-main {
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   background: var(--bg);
@@ -1389,8 +1399,15 @@ tr:last-child td {
 .chat-thread {
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 18px;
   scroll-behavior: smooth;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.chat-thread::-webkit-scrollbar {
+  display: none;
 }
 
 .chat-empty {
@@ -1478,7 +1495,7 @@ tr:last-child td {
   bottom: 0;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) 70px;
   gap: 10px;
   padding: 14px 16px;
   border-top: 1px solid var(--border);
@@ -1533,7 +1550,9 @@ tr:last-child td {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px;
   gap: 10px;
+  padding: 14px 16px 16px;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .chat-composer input {
