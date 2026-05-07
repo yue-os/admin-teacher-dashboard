@@ -52,6 +52,24 @@ export async function changePassword(currentPassword, newPassword, token) {
   })
 }
 
+export async function requestPasswordReset(email, role) {
+  return apiRequest('/auth/forgot-password', {
+    method: 'POST',
+    body: { email, role },
+  })
+}
+
+export async function verifyPasswordResetToken(token) {
+  return apiRequest(`/auth/password-reset/verify?token=${encodeURIComponent(token)}`)
+}
+
+export async function completePasswordReset(token, newPassword) {
+  return apiRequest('/auth/password-reset/complete', {
+    method: 'POST',
+    body: { token, new_password: newPassword },
+  })
+}
+
 // Admin API helpers
 export async function createUser(userData, token) {
   return apiRequest('/api/admin/users', {

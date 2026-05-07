@@ -17,9 +17,11 @@ function AdminDashboard({ session, onLogout }) {
   const [users, setUsers] = useState([])
   const [classes, setClasses] = useState([])
   const [teachers, setTeachers] = useState([])
+  const [passwordResetRequests, setPasswordResetRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [passwordResetLink, setPasswordResetLink] = useState('')
   const [createdCredentials, setCreatedCredentials] = useState(null)
   const [analyticsModal, setAnalyticsModal] = useState(null)
 
@@ -29,6 +31,7 @@ function AdminDashboard({ session, onLogout }) {
   const [saving, setSaving] = useState(false)
   const [userSearch, setUserSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('All')
+  const [reviewingResetId, setReviewingResetId] = useState(null)
 
   // CSV upload state
   const [csvFile, setCsvFile] = useState(null)
@@ -111,11 +114,18 @@ function AdminDashboard({ session, onLogout }) {
     }
   }, [session.token]);
 
+  const fetchPasswordResetRequests = useCallback(async () => {
+    const result = await apiRequest('/api/admin/password-reset-requests', {
+      token: session.token,
+    })
+    setPasswordResetRequests(Array.isArray(result?.requests) ? result.requests : [])
+  }, [session.token])
+
   const loadData = useCallback(async () => {
     try {
       setError('')
       setLoading(true)
-      await Promise.all([fetchAnalytics(), fetchUsers(), fetchClasses()])
+      await Promise.all([fetchAnalytics(), fetchUsers(), fetchClasses(), fetchPasswordResetRequests()])
     } catch (err) {
       if (err.status === 401) {
         onLogout()
@@ -125,7 +135,7 @@ function AdminDashboard({ session, onLogout }) {
     } finally {
       setLoading(false)
     }
-  }, [fetchAnalytics, fetchUsers, fetchClasses, onLogout])
+  }, [fetchAnalytics, fetchUsers, fetchClasses, fetchPasswordResetRequests, onLogout])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -795,6 +805,39 @@ function AdminDashboard({ session, onLogout }) {
     })
   }, [formatUserClasses, roleFilter, userSearch, users])
 
+  const reviewPasswordResetRequest = async (requestId, status) => {
+    const confirmed = window.confirm(
+      status === 'Approved'
+        ? 'Approve this password reset and email a secure reset link?'
+        : 'Reject this password reset request?',
+    )
+    if (!confirmed) return
+
+    try {
+      setReviewingResetId(requestId)
+      setError('')
+      setSuccessMessage('')
+      setPasswordResetLink('')
+      const result = await apiRequest(`/api/admin/password-reset-requests/${requestId}`, {
+        method: 'PATCH',
+        token: session.token,
+        body: { status },
+      })
+      setPasswordResetRequests((current) =>
+        current.map((item) => (item.id === requestId ? result.request : item)),
+      )
+      setSuccessMessage(result.message || `Password reset request ${status.toLowerCase()}.`)
+      setPasswordResetLink(result.reset_link || '')
+      if (!result.reset_link) {
+        setTimeout(() => setSuccessMessage(''), 4000)
+      }
+    } catch (err) {
+      setError(err.message || 'Unable to review password reset request.')
+    } finally {
+      setReviewingResetId(null)
+    }
+  }
+
   const deleteClass = async (classId) => {
     const confirmed = window.confirm(
       'Delete this class? This will not delete the students, only remove the class grouping.',
@@ -838,6 +881,12 @@ function AdminDashboard({ session, onLogout }) {
     >
       {error && <p className="error-text panel">{error}</p>}
       {successMessage && <p className="success-text panel">{successMessage}</p>}
+      {passwordResetLink && (
+        <div className="info-text panel">
+          <strong>Manual reset link:</strong>
+          <code>{passwordResetLink}</code>
+        </div>
+      )}
 
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem', color: '#64748b' }}>
@@ -869,6 +918,12 @@ function AdminDashboard({ session, onLogout }) {
               onClick={() => setActiveTab('classes')}
             >
               Class Management
+            </button>
+            <button
+              className={`tab ${activeTab === 'password-resets' ? 'active' : ''}`}
+              onClick={() => setActiveTab('password-resets')}
+            >
+              Password Resets
             </button>
           </nav>
 
@@ -1072,6 +1127,84 @@ function AdminDashboard({ session, onLogout }) {
                 </div>
               </article>
             </>
+          )}
+
+          {activeTab === 'password-resets' && (
+            <section className="panel users-list-panel">
+              <div className="panel-head users-list-head">
+                <div>
+                  <h2>Password Reset Requests</h2>
+                  <p className="subtitle">Review requests, approve secure email links, and monitor reset activity.</p>
+                </div>
+                <button className="btn btn-secondary" type="button" onClick={fetchPasswordResetRequests}>
+                  Refresh
+                </button>
+              </div>
+
+              <div className="table-wrap">
+                <table className="users-table">
+                  <thead>
+                    <tr>
+                      <th>User Email</th>
+                      <th>Role</th>
+                      <th>Request Time</th>
+                      <th>Status</th>
+                      <th>Security Activity</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {passwordResetRequests.length === 0 ? (
+                      <tr>
+                        <td colSpan={6}>No password reset requests yet.</td>
+                      </tr>
+                    ) : (
+                      passwordResetRequests.map((item) => (
+                        <tr key={item.id}>
+                          <td>
+                            <strong>{item.email}</strong>
+                            <br />
+                            <span className="muted-cell">{item.matched_user ? item.user_name : 'No matching account found yet'}</span>
+                          </td>
+                          <td><span className={`role-pill role-${String(item.role).toLowerCase()}`}>{item.role}</span></td>
+                          <td>{item.request_time ? new Date(item.request_time).toLocaleString() : 'Unknown'}</td>
+                          <td><span className={`badge ${item.status === 'Approved' || item.status === 'Used' ? 'success' : item.status === 'Rejected' || item.status === 'Expired' ? 'danger' : 'warning'}`}>{item.status}</span></td>
+                          <td>
+                            <span className="muted-cell">
+                              {item.email_sent_at ? `Email sent ${new Date(item.email_sent_at).toLocaleString()}` : 'Email not sent'}
+                            </span>
+                            {item.used_at && (
+                              <>
+                                <br />
+                                <span className="muted-cell">Used {new Date(item.used_at).toLocaleString()}</span>
+                              </>
+                            )}
+                          </td>
+                          <td className="actions-cell">
+                            <button
+                              className="btn btn-secondary btn-small"
+                              type="button"
+                              disabled={item.status !== 'Pending' || reviewingResetId === item.id}
+                              onClick={() => reviewPasswordResetRequest(item.id, 'Approved')}
+                            >
+                              {reviewingResetId === item.id ? 'Reviewing...' : 'Approve'}
+                            </button>
+                            <button
+                              className="btn btn-danger btn-small"
+                              type="button"
+                              disabled={item.status !== 'Pending' || reviewingResetId === item.id}
+                              onClick={() => reviewPasswordResetRequest(item.id, 'Rejected')}
+                            >
+                              Reject
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           )}
 
           {activeTab === 'csv' && (

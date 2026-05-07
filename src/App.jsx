@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage'
 import AdminDashboard from './pages/AdminDashboard'
 import TeacherDashboard from './pages/TeacherDashboard'
 import ParentDashboard from './pages/ParentDashboard'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import UnauthorizedPage from './pages/UnauthorizedPage'
 import { changePassword, loginUser } from './lib/api'
 import { clearSession, createSessionFromToken, loadSession, saveSession } from './lib/auth'
@@ -95,6 +96,7 @@ function App() {
           />
         }
       />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/admin"
         element={
