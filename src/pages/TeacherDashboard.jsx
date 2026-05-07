@@ -77,6 +77,46 @@ const CHAT_SUGGESTION_MESSAGES = [
   'Had lower participation during the quiz.',
 ]
 
+const QUIZ_VISIBILITY_STORAGE_KEY = 'teacherQuizVisibility'
+
+const blankQuizForm = {
+  title: '',
+  description: '',
+  answer_until: '',
+  status: 'draft',
+  is_hidden: false,
+  allow_retakes: true,
+  shuffle_questions: false,
+  shuffle_choices: false,
+  auto_grade: true,
+  show_correct_answers: false,
+  require_all_questions: true,
+  instant_feedback: false,
+  passing_score: 70,
+}
+
+const createBlankQuestion = () => ({
+  id: `question-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  type: 'multiple_choice',
+  text: '',
+  description: '',
+  options: ['', '', '', ''],
+  correct_answer: '0',
+  points: 1,
+  required: true,
+})
+
+const normalizeQuizQuestion = (question = {}, index = 0) => ({
+  id: question.id || question.public_id || `question-${Date.now()}-${index}`,
+  type: question.type || 'multiple_choice',
+  text: question.text || '',
+  description: question.description || '',
+  options: Array.isArray(question.options) ? question.options : [],
+  correct_answer: question.correct_answer ?? (question.type === 'true_false' ? 'true' : '0'),
+  points: Number(question.points) || 1,
+  required: question.required ?? true,
+})
+
 const apiEndpoint = (() => {
   try {
     const apiUrl = new URL(import.meta.env.VITE_API_BASE_URL || window.location.origin)
@@ -121,6 +161,7 @@ function TeacherDashboard({ session, onLogout }) {
   // UI & Feature States
   const [selectedClassId, setSelectedClassId] = useState('')
   const [activeTab, setActiveTab] = useState(() => (initialPasswordChangeRequired ? 'profile' : 'analytics'))
+  const [activeQuizTab, setActiveQuizTab] = useState('class_quizzes')
   const [analyticsPeriod, setAnalyticsPeriod] = useState('weekly')
   const [teacherAnalyticsModal, setTeacherAnalyticsModal] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -138,9 +179,14 @@ function TeacherDashboard({ session, onLogout }) {
   const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '' })
   const [savingAnnouncement, setSavingAnnouncement] = useState(false)
 
-  const [quizForm, setQuizForm] = useState({ title: '', timer_seconds: 300, start_date: '' })
+  const [quizForm, setQuizForm] = useState(blankQuizForm)
   const [savingQuiz, setSavingQuiz] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
+  const [autoSavingDraft, setAutoSavingDraft] = useState(false)
   const [quizQuestions, setQuizQuestions] = useState([])
+  const [storedQuizVisibility, setStoredQuizVisibility] = useState(() => readStoredJson(QUIZ_VISIBILITY_STORAGE_KEY))
+  const [quizStatusNow, setQuizStatusNow] = useState(() => Date.now())
+  const [selectedResponseQuiz, setSelectedResponseQuiz] = useState(null)
 
   const chatEndRef = useRef(null)
   const scrollToBottom = () => {
@@ -169,8 +215,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       id: 'sample-quiz-1',
       class_id: 'sample-class',
       title: 'Science Review - Week 4',
-      timer_seconds: 600,
-      start_date: '2026-04-29T08:30:00Z',
+      is_hidden: false,
       questions: [
         {
           id: 'sample-q-1',
@@ -196,8 +241,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       id: 'sample-quiz-2',
       class_id: 'sample-class',
       title: 'Math Skills Check - Fractions',
-      timer_seconds: 420,
-      start_date: '2026-04-29T09:15:00Z',
+      is_hidden: false,
       questions: [
         {
           id: 'sample-q-3',
@@ -211,45 +255,6 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       ],
     },
   ], [])
-
-  const buildSampleCompletedQuizResults = useCallback((students, classroom) => {
-    if (!students.length) return []
-
-    const studentLabel = (student) => {
-      const fullName = `${(student.first_name || '').trim()} ${(student.last_name || '').trim()}`.trim()
-      return fullName || student.username || 'Student'
-    }
-
-    const parentLabel = (student) => {
-      const fullName = (student.parent_name || '').trim()
-      return fullName || null
-    }
-
-    const matchingQuizzes = SAMPLE_QUIZZES.filter((quiz) => !selectedClassId || String(quiz.class_id) === String(selectedClassId))
-    const quizPool = matchingQuizzes.length ? matchingQuizzes : SAMPLE_QUIZZES
-
-    return students.slice(0, 2).map((student, index) => {
-      const quiz = quizPool[index % quizPool.length]
-      return {
-        id: `sample-result-${student.id || student.student_id || index}`,
-        quiz_id: quiz.id,
-        quiz_title: quiz.title,
-        quiz_class_id: classroom?.id ?? selectedClassId ?? null,
-        student_id: student.id || student.student_id,
-        student_public_id: student.student_public_id || null,
-        student_name: studentLabel(student),
-        student_username: student.username || null,
-        parent_id: student.parent_id || null,
-        parent_public_id: student.parent_public_id || null,
-        parent_name: parentLabel(student),
-        class_id: student.class_id || classroom?.id || selectedClassId || null,
-        class_name: classroom?.name || student.class_name || 'Selected Class',
-        score: index === 0 ? 88 : 73,
-        submitted_at: new Date(Date.now() - index * 3600000).toISOString(),
-        questions_count: quiz.questions?.length || 0,
-      }
-    })
-  }, [SAMPLE_QUIZZES, selectedClassId])
 
   const normalizeQuiz = (quiz) => {
     if (!quiz) return null
@@ -317,19 +322,36 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
   const loadQuizForEdit = (quiz) => {
     setEditingQuizId(quiz.id || quiz._id);
     setQuizForm({
-      title: quiz.title,
-      timer_seconds: quiz.timer_seconds,
-      start_date: quiz.start_date ? quiz.start_date.substring(0, 16) : '' // Formats for datetime-local
+      title: quiz.title || '',
+      description: quiz.description || '',
+      answer_until: quiz.answer_until ? new Date(new Date(quiz.answer_until).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
+      status: quiz.status || 'published',
+      is_hidden: Boolean(quiz.is_hidden),
+      allow_retakes: quiz.allow_retakes ?? true,
+      shuffle_questions: quiz.shuffle_questions ?? false,
+      shuffle_choices: quiz.shuffle_choices ?? false,
+      auto_grade: quiz.auto_grade ?? true,
+      show_correct_answers: quiz.show_correct_answers ?? false,
+      require_all_questions: quiz.require_all_questions ?? true,
+      instant_feedback: quiz.instant_feedback ?? false,
+      passing_score: quiz.passing_score ?? 70
     });
     if (quiz.class_id) {
       setSelectedClassId(String(quiz.class_id));
     }
-    setQuizQuestions(quiz.questions || []);
-    setActiveQuestionId(quiz.questions?.[0]?.id || null);
+    const loadedQuestions = (quiz.questions || []).map(normalizeQuizQuestion);
+    setQuizQuestions(loadedQuestions);
+    setActiveQuestionId(loadedQuestions[0]?.id || null);
+    setActiveQuizTab('create_quiz');
     
     // Smooth scroll to the editor area
-    window.scrollTo({ top: 400, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setQuizStatusNow(Date.now()), 60000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   const [profileForm, setProfileForm] = useState({
     currentPassword: '',
@@ -520,46 +542,32 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     })
   }, [readStorageKey])
 
-  const displayQuizResults = completedQuizResults.length ? completedQuizResults : buildSampleCompletedQuizResults(classStudents, currentClass)
-  const displayQuizzes = allQuizzes.length ? allQuizzes : SAMPLE_QUIZZES
+  const displayQuizResults = completedQuizResults
+  const displayQuizzes = (allQuizzes.length ? allQuizzes : SAMPLE_QUIZZES).map((quiz) => {
+    const quizId = quiz.id || quiz._id
+    return Object.prototype.hasOwnProperty.call(storedQuizVisibility, quizId)
+      ? { ...quiz, is_hidden: storedQuizVisibility[quizId] }
+      : quiz
+  })
+  const quizSubmissionStats = useMemo(() => {
+    const total = displayQuizResults.length
+    const averageScore = total
+      ? displayQuizResults.reduce((sum, result) => sum + (Number(result.score) || 0), 0) / total
+      : 0
 
-  // Fetch completed quizzes when classStudents or selectedClassId changes
+    return {
+      averageScore,
+      total,
+    }
+  }, [displayQuizResults])
+
   useEffect(() => {
-    if (passwordChangeRequired) return
-
-    const timer = setTimeout(() => {
-    if (!selectedClassId) {
+    const timer = window.setTimeout(() => {
+      setSelectedResponseQuiz(null)
       setCompletedQuizResults([])
-      return
-    }
-
-    const fetchCompletedQuizzes = async () => {
-      try {
-        setLoadingCompletedQuizResults(true)
-        const result = await apiRequest(`/teacher/quiz/results?class_id=${encodeURIComponent(selectedClassId)}`, {
-          token: session.token,
-        })
-        const liveResults = Array.isArray(result?.results) ? result.results : []
-        const sampleResults = buildSampleCompletedQuizResults(classStudents, currentClass)
-        setCompletedQuizResults(liveResults.length ? liveResults : sampleResults)
-      } catch (err) {
-        if (isPasswordChangeRequiredError(err)) {
-          handlePasswordRequired()
-          setCompletedQuizResults([])
-          return
-        }
-        console.error('Failed to fetch completed quiz results', err)
-        setCompletedQuizResults(buildSampleCompletedQuizResults(classStudents, currentClass))
-      } finally {
-        setLoadingCompletedQuizResults(false)
-      }
-    }
-
-    void fetchCompletedQuizzes()
     }, 0)
-
-    return () => clearTimeout(timer)
-  }, [buildSampleCompletedQuizResults, selectedClassId, classStudents, currentClass, handlePasswordRequired, passwordChangeRequired, session.token])
+    return () => window.clearTimeout(timer)
+  }, [selectedClassId])
 
   const globalMetrics = useMemo(() => {
     const classCount = overview.classes?.length || 0
@@ -832,25 +840,49 @@ const createAnnouncement = async (event) => {
   }
 
   const onQuizChange = (event) => {
-    const { name, value } = event.target
-    setQuizForm((current) => ({ ...current, [name]: value }))
+    const { name, type, checked, value } = event.target
+    setQuizForm((current) => ({ ...current, [name]: type === 'checkbox' ? checked : value }))
+  }
+
+  const updateAnswerUntilPart = (part, value) => {
+    setQuizForm((current) => {
+      const [currentDate = '', currentTime = ''] = String(current.answer_until || '').split('T')
+      const nextDate = part === 'date' ? value : currentDate
+      const nextTime = part === 'time' ? value : currentTime
+      return {
+        ...current,
+        answer_until: nextDate ? `${nextDate}T${nextTime || '23:59'}` : '',
+      }
+    })
   }
 
   const addQuestion = () => {
-    const newId = Date.now()
-    setQuizQuestions([
-      ...quizQuestions,
-      { id: newId, type: 'multiple_choice', text: '', options: ['', '', '', ''], correct_answer: '0', points: 1 }
-    ])
-    setActiveQuestionId(newId)
+    const question = createBlankQuestion()
+    setQuizQuestions((current) => [...current, question])
+    setActiveQuestionId(question.id)
   }
 
   const removeQuestion = (id) => {
-    setQuizQuestions(quizQuestions.filter((q) => q.id !== id))
+    setQuizQuestions((current) => current.filter((q) => q.id !== id))
   }
 
   const updateQuestion = (id, field, value) => {
-    setQuizQuestions(quizQuestions.map((q) => (q.id === id ? { ...q, [field]: value } : q)))
+    setQuizQuestions((current) =>
+      current.map((q) => {
+        if (q.id !== id) return q
+        const next = { ...q, [field]: value }
+        if (field === 'type' && value === 'true_false') {
+          return { ...next, options: ['True', 'False'], correct_answer: next.correct_answer === 'false' ? 'false' : 'true' }
+        }
+        if (field === 'type' && value === 'multiple_choice' && (!Array.isArray(q.options) || q.options.length < 2)) {
+          return { ...next, options: ['', '', '', ''], correct_answer: '0' }
+        }
+        if (field === 'type' && value === 'identification') {
+          return { ...next, options: [], correct_answer: '' }
+        }
+        return next
+      }),
+    )
   }
 
   const updateOption = (qId, optIndex, value) => {
@@ -864,62 +896,205 @@ const createAnnouncement = async (event) => {
     )
   }
 
-const createQuiz = async (event) => {
-  event.preventDefault();
-
-  if (quizQuestions.length === 0) {
-    setError('Please add at least one question to the quiz before publishing.');
-    return;
+  const addOption = (qId) => {
+    setQuizQuestions((current) =>
+      current.map((q) => (q.id === qId ? { ...q, options: [...(q.options || []), ''] } : q)),
+    )
   }
 
-  try {
-    setSavingQuiz(true);
-    setError('');
-
-    // 1. DEFINE the payload here
-    const payload = {
-      title: quizForm.title,
-      timer_seconds: Number(quizForm.timer_seconds),
-      class_id: selectedClassId ? Number(selectedClassId) : undefined,
-      questions: quizQuestions,
-    };
-
-    // Add start_date only if it exists
-    if (quizForm.start_date) {
-      payload.start_date = new Date(quizForm.start_date).toISOString();
-    }
-
-    const method = editingQuizId ? 'PATCH' : 'POST';
-    const endpoint = editingQuizId ? `/teacher/quiz/${editingQuizId}` : '/teacher/quiz';
-
-    // 2. Now 'payload' is defined and can be used
-    const savedQuiz = await apiRequest(endpoint, {
-      method,
-      token: session.token,
-      body: payload, 
-    });
-    const normalizedQuiz = normalizeQuiz(savedQuiz?.quiz || savedQuiz)
-
-    // Update local state list
-    if (editingQuizId) {
-      setAllQuizzes(prev => prev.map(q => 
-        String(q.id || q._id) === String(editingQuizId) ? normalizedQuiz : q
-      ));
-    } else {
-      setAllQuizzes(prev => [normalizedQuiz, ...prev]);
-    }
-
-    setSuccessMessage(editingQuizId ? 'Quiz updated!' : 'Quiz published!');
-    setEditingQuizId(null);
-    setQuizForm({ title: '', timer_seconds: 300, start_date: '' });
-    setQuizQuestions([]);
-    
-  } catch (err) {
-    setError(err.message);
-  } finally {
-    setSavingQuiz(false);
+  const removeOption = (qId, optIndex) => {
+    setQuizQuestions((current) =>
+      current.map((q) => {
+        if (q.id !== qId) return q
+        const options = (q.options || []).filter((_, index) => index !== optIndex)
+        const correctAnswer = String(q.correct_answer) === String(optIndex) ? '0' : q.correct_answer
+        return { ...q, options, correct_answer: correctAnswer }
+      }),
+    )
   }
-};
+
+  const addOtherChoice = (qId) => {
+    setQuizQuestions((current) =>
+      current.map((q) =>
+        q.id === qId && !(q.options || []).some((option) => String(option).toLowerCase() === 'other')
+          ? { ...q, options: [...(q.options || []), 'Other'] }
+          : q,
+      ),
+    )
+  }
+
+  const duplicateQuestion = (question) => {
+    const copiedQuestion = {
+      ...question,
+      id: `question-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      options: [...(question.options || [])],
+      text: `${question.text || 'Untitled question'} (Copy)`,
+    }
+    setQuizQuestions((current) => {
+      const questionIndex = current.findIndex((q) => q.id === question.id)
+      const next = [...current]
+      next.splice(questionIndex + 1, 0, copiedQuestion)
+      return next
+    })
+    setActiveQuestionId(copiedQuestion.id)
+  }
+
+  const moveQuestion = (fromIndex, direction) => {
+    const toIndex = fromIndex + direction
+    if (toIndex < 0 || toIndex >= quizQuestions.length) return
+
+    setQuizQuestions((current) => {
+      const next = [...current]
+      const [question] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, question)
+      return next
+    })
+  }
+
+  const resetQuizBuilder = () => {
+    setEditingQuizId(null)
+    setQuizForm(blankQuizForm)
+    setQuizQuestions([])
+    setActiveQuestionId(null)
+  }
+
+  const buildQuizPayload = (status) => ({
+    title: quizForm.title.trim(),
+    description: quizForm.description,
+    class_id: selectedClassId ? Number(selectedClassId) : undefined,
+    questions: quizQuestions,
+    answer_until: quizForm.answer_until ? new Date(quizForm.answer_until).toISOString() : null,
+    status,
+    is_hidden: Boolean(quizForm.is_hidden),
+    allow_retakes: quizForm.allow_retakes,
+    shuffle_questions: quizForm.shuffle_questions,
+    shuffle_choices: quizForm.shuffle_choices,
+    auto_grade: quizForm.auto_grade,
+    show_correct_answers: quizForm.show_correct_answers,
+    require_all_questions: quizForm.require_all_questions,
+    instant_feedback: quizForm.instant_feedback,
+    passing_score: Number(quizForm.passing_score) || 70,
+  })
+
+  const validateQuiz = (status) => {
+    if (!quizForm.title.trim()) return 'Quiz title is required.'
+    if (status === 'published' && quizQuestions.length === 0) return 'Please add at least one question before publishing.'
+    if (quizForm.answer_until && Number.isNaN(new Date(quizForm.answer_until).getTime())) return 'Answer Until must be a valid date and time.'
+    if (status === 'published' && quizForm.answer_until && new Date(quizForm.answer_until) <= new Date()) return 'Answer Until must be in the future.'
+    return ''
+  }
+
+  const persistQuiz = async (status, { autosave = false } = {}) => {
+    if (autosave && autoSavingDraft) return null
+    if ((savingQuiz || savingDraft || autoSavingDraft) && !autosave) return null
+
+    const validationError = validateQuiz(status)
+    if (validationError) {
+      if (!autosave) setError(validationError)
+      return null
+    }
+
+    try {
+      if (autosave) setAutoSavingDraft(true)
+      else if (status === 'draft') setSavingDraft(true)
+      else setSavingQuiz(true)
+      if (!autosave) {
+        setError('')
+        setSuccessMessage('')
+      }
+
+      const savedQuiz = await apiRequest(editingQuizId ? `/teacher/quiz/${editingQuizId}` : '/teacher/quiz', {
+        method: editingQuizId ? 'PATCH' : 'POST',
+        token: session.token,
+        body: buildQuizPayload(status),
+      })
+      const normalizedQuiz = normalizeQuiz(savedQuiz?.quiz || savedQuiz)
+      if (!normalizedQuiz) return null
+
+      setEditingQuizId(normalizedQuiz.id)
+      setQuizForm((current) => ({ ...current, status }))
+      setAllQuizzes((current) => {
+        const exists = current.some((quiz) => String(quiz.id || quiz._id) === String(normalizedQuiz.id))
+        return exists
+          ? current.map((quiz) => (String(quiz.id || quiz._id) === String(normalizedQuiz.id) ? normalizedQuiz : quiz))
+          : [normalizedQuiz, ...current]
+      })
+
+      if (!autosave) {
+        setSuccessMessage(status === 'draft' ? 'Draft saved.' : editingQuizId ? 'Quiz updated.' : 'Quiz published.')
+        setTimeout(() => setSuccessMessage(''), 3000)
+        if (status === 'published') {
+          resetQuizBuilder()
+          setActiveQuizTab('class_quizzes')
+        }
+      }
+
+      return normalizedQuiz
+    } catch (err) {
+      if (!autosave) setError(err.message || 'Unable to save quiz. Please check the quiz details and try again.')
+      return null
+    } finally {
+      if (autosave) setAutoSavingDraft(false)
+      else if (status === 'draft') setSavingDraft(false)
+      else setSavingQuiz(false)
+    }
+  }
+
+  const saveDraft = async () => {
+    await persistQuiz('draft')
+  }
+
+  const createQuiz = async (event) => {
+    event.preventDefault()
+    await persistQuiz('published')
+  }
+
+  useEffect(() => {
+    if (activeQuizTab !== 'create_quiz' || passwordChangeRequired) return
+    if (editingQuizId && quizForm.status !== 'draft') return
+    if (!quizForm.title.trim() && quizQuestions.length === 0) return
+
+    const timer = window.setTimeout(() => {
+      void persistQuiz('draft', { autosave: true })
+    }, 4500)
+
+    return () => window.clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeQuizTab, editingQuizId, passwordChangeRequired, quizForm, quizQuestions])
+
+  const viewQuizResponses = async (quiz) => {
+    const quizId = quiz.id || quiz._id
+    if (!quizId || String(quizId).startsWith('sample-')) {
+      setSelectedResponseQuiz(quiz)
+      setCompletedQuizResults([])
+      setActiveQuizTab('recent_submissions')
+      return
+    }
+
+    try {
+      setLoadingCompletedQuizResults(true)
+      setError('')
+      setSelectedResponseQuiz(quiz)
+      setCompletedQuizResults([])
+      setActiveQuizTab('recent_submissions')
+      const query = new URLSearchParams({ quiz_id: String(quizId) })
+      if (selectedClassId) query.set('class_id', String(selectedClassId))
+      const result = await apiRequest(`/teacher/quiz/results?${query.toString()}`, {
+        token: session.token,
+      })
+      setSelectedResponseQuiz(normalizeQuiz(result?.quiz) || quiz)
+      setCompletedQuizResults(Array.isArray(result?.results) ? result.results : [])
+    } catch (err) {
+      if (isPasswordChangeRequiredError(err)) {
+        handlePasswordRequired()
+        return
+      }
+      setError(err.message || 'Failed to load quiz responses.')
+      setCompletedQuizResults([])
+    } finally {
+      setLoadingCompletedQuizResults(false)
+    }
+  }
 
   const openFeedbackComposer = (quizResult) => {
     const recipientName = quizResult.student_name || quizResult.student_username || 'Student'
@@ -1000,11 +1175,8 @@ const createQuiz = async (event) => {
       )
       setSuccessMessage('Student can retake the quiz now.')
       setTimeout(() => setSuccessMessage(''), 3000)
-      if (selectedClassId) {
-        const result = await apiRequest(`/teacher/quiz/results?class_id=${encodeURIComponent(selectedClassId)}`, {
-          token: session.token,
-        })
-        setCompletedQuizResults(Array.isArray(result?.results) ? result.results : [])
+      if (selectedResponseQuiz) {
+        await viewQuizResponses(selectedResponseQuiz)
       }
     } catch (err) {
       setError(err.message || 'Failed to enable quiz retake')
@@ -1032,7 +1204,7 @@ const createQuiz = async (event) => {
       setCompletedQuizResults((current) => current.filter((result) => String(result.quiz_id) !== String(quizId)))
       if (String(editingQuizId) === String(quizId)) {
         setEditingQuizId(null)
-        setQuizForm({ title: '', timer_seconds: 300, start_date: '' })
+        setQuizForm(blankQuizForm)
         setQuizQuestions([])
       }
       if (retakeQuiz && String(retakeQuiz.id || retakeQuiz._id) === String(quizId)) {
@@ -1044,6 +1216,89 @@ const createQuiz = async (event) => {
       setError(err.message || 'Failed to delete quiz')
     }
   }
+
+  const toggleQuizVisibility = async (quiz) => {
+    const quizId = quiz.id || quiz._id;
+    const nextHidden = !quiz.is_hidden
+    const nextVisibility = { ...storedQuizVisibility, [quizId]: nextHidden }
+    setStoredQuizVisibility(nextVisibility)
+    writeStoredJson(QUIZ_VISIBILITY_STORAGE_KEY, nextVisibility)
+    setAllQuizzes((current) =>
+      current.map((q) => (String(q.id || q._id) === String(quizId) ? { ...q, is_hidden: nextHidden } : q))
+    )
+
+    if (String(quizId).startsWith('sample-')) {
+      return;
+    }
+    const action = quiz.is_hidden ? 'Unhide' : 'Hide';
+
+    try {
+      setError('');
+      const res = await apiRequest(`/teacher/quiz/${quizId}/toggle_visibility`, {
+        method: 'PATCH',
+        token: session.token,
+      });
+      setAllQuizzes((current) =>
+        current.map((q) => (String(q.id || q._id) === String(quizId) ? { ...q, is_hidden: res.is_hidden } : q))
+      );
+      const syncedVisibility = { ...nextVisibility, [quizId]: Boolean(res.is_hidden) }
+      setStoredQuizVisibility(syncedVisibility)
+      writeStoredJson(QUIZ_VISIBILITY_STORAGE_KEY, syncedVisibility)
+    } catch (err) {
+      setStoredQuizVisibility(storedQuizVisibility)
+      writeStoredJson(QUIZ_VISIBILITY_STORAGE_KEY, storedQuizVisibility)
+      setAllQuizzes((current) =>
+        current.map((q) => (String(q.id || q._id) === String(quizId) ? { ...q, is_hidden: quiz.is_hidden } : q))
+      )
+      setError(err.message || `Failed to ${action.toLowerCase()} quiz.`);
+    }
+  };
+
+  const closeQuizManually = async (quiz) => {
+    if (!window.confirm(`Are you sure you want to close "${quiz.title}" manually? Students will no longer be able to submit answers.`)) return;
+    try {
+      setError('');
+      const payload = {
+        title: quiz.title,
+        description: quiz.description || '',
+        questions: quiz.questions,
+        status: 'closed',
+        answer_until: new Date().toISOString(),
+        class_id: quiz.class_id,
+      };
+      const res = await apiRequest(`/teacher/quiz/${quiz.id || quiz._id}`, {
+        method: 'PATCH',
+        token: session.token,
+        body: payload
+      });
+      const normalizedQuiz = normalizeQuiz(res?.quiz || res);
+      setAllQuizzes((current) =>
+        current.map((q) => (String(q.id || q._id) === String(quiz.id || quiz._id) ? normalizedQuiz : q))
+      );
+      setSuccessMessage('Quiz closed manually.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setError(err.message || 'Failed to close quiz.');
+    }
+  };
+
+  const toggleAnnouncementVisibility = async (announcement) => {
+    const action = announcement.is_hidden ? 'Unhide' : 'Hide';
+    if (!window.confirm(`Are you sure you want to ${action} this announcement?`)) return;
+
+    try {
+      setError('');
+      const res = await apiRequest(`/teacher/announcement/${announcement.id}/toggle_visibility`, {
+        method: 'PATCH',
+        token: session.token,
+      });
+      setAnnouncements((current) =>
+        current.map((a) => (String(a.id) === String(announcement.id) ? { ...a, is_hidden: res.is_hidden } : a))
+      );
+    } catch (err) {
+      setError(err.message || `Failed to ${action.toLowerCase()} announcement.`);
+    }
+  };
 
   const handlePasswordReset = async (e) => {
     e.preventDefault()
@@ -1824,300 +2079,224 @@ const createQuiz = async (event) => {
 
               {activeTab === 'quizzes' && (
                 <section className="quizzes-dashboard">
-                  <div className="two-col">
-                    <article className="panel">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                  <div className="quiz-inner-tabs tabs" role="tablist" aria-label="Quiz sections">
+                    <button type="button" className={`tab ${activeQuizTab === 'class_quizzes' ? 'active' : ''}`} onClick={() => setActiveQuizTab('class_quizzes')}>Class Quizzes</button>
+                    <button type="button" className={`tab ${activeQuizTab === 'create_quiz' ? 'active' : ''}`} onClick={() => setActiveQuizTab('create_quiz')}>Create New Quiz</button>
+                    <button type="button" className={`tab ${activeQuizTab === 'recent_submissions' ? 'active' : ''}`} onClick={() => setActiveQuizTab('recent_submissions')}>Recent Submissions</button>
+                  </div>
+
+                  {activeQuizTab === 'class_quizzes' && (
+                    <article className="panel quiz-tab-panel">
+                      <div className="panel-head">
                         <div>
-                          <h2 style={{ margin: 0 }}>Class Quizzes</h2>
-                          <p className="subtitle" style={{ margin: '0.25rem 0 0' }}>Manage assessments for {currentClass?.name}</p>
+                          <h2>Class Quizzes</h2>
+                          <p className="subtitle">Manage assessments for {currentClass?.name || 'the selected class'}.</p>
                         </div>
-                        <button 
-                          className="btn btn-primary"
-                          onClick={() => {
-                            setEditingQuizId(null);
-                            setQuizForm({ title: '', timer_seconds: 300, start_date: '' });
-                            setQuizQuestions([]);
-                            setActiveQuestionId(null);
-                            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-                          }}
-                        >
-                          + New Quiz
-                        </button>
+                        <button type="button" className="btn btn-primary" onClick={() => { resetQuizBuilder(); setActiveQuizTab('create_quiz') }}>Create New Quiz</button>
                       </div>
 
                       {displayQuizzes.length === 0 ? (
                         <p className="info-text">No quizzes have been created yet.</p>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                          {displayQuizzes.map((quiz) => (
-                            <div key={quiz.id} style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: '8px', background: '#fff' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                                <div>
-                                  <h3 style={{ margin: '0 0 0.25rem 0' }}>{quiz.title}</h3>
-                                  <div style={{ fontSize: '0.875rem', color: 'var(--text-light)', display: 'flex', gap: '1rem' }}>
-                                    <span>⏱️ {Math.floor(quiz.timer_seconds / 60)} mins</span>
-                                    <span>📝 {quiz.questions?.length || 0} questions</span>
-                                    <span>📅 {quiz.start_date ? new Date(quiz.start_date).toLocaleDateString() : 'No date'}</span>
+                        <div className="quiz-card-grid">
+                          {displayQuizzes.map((quiz) => {
+                            const quizId = quiz.id || quiz._id
+                            const answerUntil = quiz.answer_until ? new Date(quiz.answer_until) : null
+                            const hoursUntilDeadline = answerUntil ? (answerUntil.getTime() - quizStatusNow) / 36e5 : Infinity
+                            const savedStatus = quiz.status || 'published'
+                            const quizStatus = savedStatus === 'draft'
+                              ? 'Draft'
+                              : answerUntil && answerUntil.getTime() <= quizStatusNow
+                                ? 'Closed'
+                                : hoursUntilDeadline <= 24
+                                  ? 'Closing Soon'
+                                  : 'Published'
+                            const submissions = quiz.submission_count ?? 0
+
+                            return (
+                              <div key={quizId} className="quiz-card">
+                                <div className="quiz-card-head">
+                                  <div>
+                                    <h3>{quiz.title || 'Untitled Quiz'}</h3>
+                                    <p>{quiz.description || 'No description added.'}</p>
+                                  </div>
+                                  <div className="quiz-status-stack">
+                                    <span className={`badge ${quiz.is_hidden ? 'danger' : 'success'}`}>{quiz.is_hidden ? 'Hidden' : 'Visible'}</span>
+                                    <span className={`badge ${quizStatus === 'Draft' ? 'warning' : quizStatus === 'Closed' ? 'danger' : 'success'}`}>{quizStatus}</span>
                                   </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                  <button className="btn btn-secondary" onClick={() => loadQuizForEdit(quiz)} style={{ padding: '0.25rem 0.5rem' }}>Edit</button>
-                                  <button className="btn btn-danger" onClick={() => deleteQuiz(quiz)} style={{ padding: '0.25rem 0.5rem' }}>Delete</button>
+
+                                <div className="quiz-meta-grid">
+                                  <div><span>Questions</span><strong>{quiz.questions?.length || 0}</strong></div>
+                                  <div><span>Status</span><strong>{quizStatus}</strong></div>
+                                  <div><span>Answer Until</span><strong>{answerUntil ? answerUntil.toLocaleString() : 'No deadline'}</strong></div>
+                                  <div><span>Submissions</span><strong>{submissions}</strong></div>
+                                  <div><span>Date Created</span><strong>{quiz.created_at ? new Date(quiz.created_at).toLocaleDateString() : 'Draft date unknown'}</strong></div>
+                                </div>
+
+                                <div className="quiz-card-actions">
+                                  <button type="button" className="btn btn-secondary btn-small" onClick={() => loadQuizForEdit(quiz)}>Edit Quiz</button>
+                                  <button type="button" className="btn btn-secondary btn-small" onClick={() => toggleQuizVisibility(quiz)}>{quiz.is_hidden ? 'Unhide Quiz' : 'Hide Quiz'}</button>
+                                  <button type="button" className="btn btn-secondary btn-small" onClick={() => viewQuizResponses(quiz)}>View Responses</button>
+                                  {savedStatus !== 'draft' && (!answerUntil || answerUntil.getTime() > quizStatusNow) ? <button type="button" className="btn btn-secondary btn-small warning-action" onClick={() => closeQuizManually(quiz)}>Close Now</button> : null}
+                                  <button type="button" className="btn btn-danger btn-small" onClick={() => deleteQuiz(quiz)}>Delete Quiz</button>
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       )}
                     </article>
+                  )}
 
-                    <article className="panel">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <h2 style={{ margin: 0 }}>Recent Submissions</h2>
-                      </div>
+                  {activeQuizTab === 'create_quiz' && (
+                    <article className="quiz-builder-surface">
+                      <form onSubmit={createQuiz} className="quiz-builder-form">
+                        <div className="quiz-form-header">
+                          <input className="quiz-title-input" name="title" value={quizForm.title} onChange={onQuizChange} placeholder="Untitled quiz" required />
+                          <textarea name="description" value={quizForm.description} onChange={onQuizChange} placeholder="Quiz description" rows={3} />
+                        </div>
 
-                      {loadingCompletedQuizResults ? (
-                        <p className="info-text">Loading results...</p>
-                      ) : displayQuizResults.length === 0 ? (
-                        <p className="info-text">No recent submissions found.</p>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                          {displayQuizResults.map((result) => (
-                            <div key={result.id} style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: '8px', background: '#f9fafb' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                <strong>{result.student_name}</strong>
-                                <span className={`badge ${result.score >= 75 ? 'success' : result.score >= 50 ? 'warning' : 'danger'}`}>
-                                  {result.score}%
-                                </span>
+                        <div className="quiz-builder-layout">
+                          <div className="quiz-question-stack">
+                            {quizQuestions.length === 0 ? (
+                              <div className="quiz-empty-builder">
+                                <p>No questions added yet.</p>
+                                <button type="button" className="btn btn-primary" onClick={addQuestion}>Add Question</button>
                               </div>
-                              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'var(--text-light)' }}>{result.quiz_title}</p>
-                              
-                              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                                <button className="btn btn-secondary" onClick={() => openFeedbackComposer(result)} style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
-                                  Send Feedback
-                                </button>
-                                <button className="btn btn-secondary" onClick={() => allowQuizRetake(result)} style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
-                                  Allow Retake
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                  </div>
-
-                  {/* QUIZ BUILDER UI */}
-                  <article className="panel" style={{ marginTop: '2rem' }}>
-                    <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                      <h2 style={{ margin: '0 0 0.5rem 0' }}>{editingQuizId ? 'Edit Quiz' : 'Create New Quiz'}</h2>
-                      <p className="subtitle" style={{ margin: 0 }}>Design your questions and set quiz parameters.</p>
-                    </div>
-
-                    <form onSubmit={createQuiz}>
-                      <div className="form-grid" style={{ marginBottom: '2rem', background: '#f9fafb', padding: '1.5rem', borderRadius: '8px' }}>
-                        <label className="field">
-                          <strong>Quiz Title *</strong>
-                          <input
-                            name="title"
-                            value={quizForm.title}
-                            onChange={onQuizChange}
-                            placeholder="e.g. Midterm Science Assessment"
-                            required
-                            style={{ padding: '0.75rem' }}
-                          />
-                        </label>
-                        
-                        <div className="field-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                          <label className="field">
-                            <strong>Time Limit (seconds) *</strong>
-                            <input
-                              type="number"
-                              name="timer_seconds"
-                              value={quizForm.timer_seconds}
-                              onChange={onQuizChange}
-                              min="30"
-                              required
-                              style={{ padding: '0.75rem' }}
-                            />
-                            <small style={{ color: 'var(--text-light)', marginTop: '0.25rem' }}>{Math.floor(quizForm.timer_seconds / 60)} minutes</small>
-                          </label>
-
-                          <label className="field">
-                            <strong>Scheduled Start Date</strong>
-                            <input
-                              type="datetime-local"
-                              name="start_date"
-                              value={quizForm.start_date}
-                              onChange={onQuizChange}
-                              style={{ padding: '0.75rem' }}
-                            />
-                            <small style={{ color: 'var(--text-light)', marginTop: '0.25rem' }}>Leave blank to start immediately</small>
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="quiz-questions-builder">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                          <h3 style={{ margin: 0 }}>Questions ({quizQuestions.length})</h3>
-                          <button type="button" className="btn btn-secondary" onClick={addQuestion} style={{ fontWeight: 'bold' }}>
-                            + Add Question
-                          </button>
-                        </div>
-
-                        {quizQuestions.length === 0 ? (
-                          <div style={{ padding: '3rem', textAlign: 'center', background: '#f9fafb', borderRadius: '8px', border: '2px dashed var(--border-color)' }}>
-                            <p style={{ margin: '0 0 1rem 0', color: 'var(--text-light)' }}>No questions added yet.</p>
-                            <button type="button" className="btn btn-primary" onClick={addQuestion}>Start Adding Questions</button>
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                            {quizQuestions.map((q, index) => (
-                              <div key={q.id} style={{ 
-                                border: activeQuestionId === q.id ? '2px solid var(--primary)' : '1px solid var(--border-color)', 
-                                borderRadius: '8px', 
-                                padding: '1.5rem',
-                                background: activeQuestionId === q.id ? '#fdfdfd' : '#fff',
-                                transition: 'all 0.2s',
-                                position: 'relative'
-                              }}>
-                                <div style={{ position: 'absolute', top: '-10px', left: '1rem', background: activeQuestionId === q.id ? 'var(--primary)' : 'var(--border-color)', color: activeQuestionId === q.id ? '#fff' : '#666', padding: '0.2rem 0.75rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                                  Question {index + 1}
-                                </div>
-                                
-                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-                                  <button type="button" onClick={() => removeQuestion(q.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '0.875rem' }}>
-                                    Remove
-                                  </button>
-                                </div>
-
-                                <div onClick={() => setActiveQuestionId(q.id)}>
-                                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                                    <label className="field" style={{ margin: 0 }}>
-                                      Question Text
-                                      <textarea
-                                        value={q.text}
-                                        onChange={(e) => updateQuestion(q.id, 'text', e.target.value)}
-                                        placeholder="What is the capital of France?"
-                                        rows="2"
-                                        required
-                                        style={{ padding: '0.75rem' }}
-                                      />
-                                    </label>
-                                    
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                      <label className="field" style={{ margin: 0 }}>
-                                        Type
-                                        <select value={q.type} onChange={(e) => updateQuestion(q.id, 'type', e.target.value)} style={{ padding: '0.75rem' }}>
-                                          <option value="multiple_choice">Multiple Choice</option>
-                                          <option value="identification">Identification</option>
-                                          <option value="true_false">True / False</option>
-                                        </select>
-                                      </label>
-                                      
-                                      <label className="field" style={{ margin: 0 }}>
-                                        Points
-                                        <input
-                                          type="number"
-                                          value={q.points}
-                                          onChange={(e) => updateQuestion(q.id, 'points', Number(e.target.value))}
-                                          min="1"
-                                          required
-                                          style={{ padding: '0.75rem' }}
-                                        />
-                                      </label>
+                            ) : (
+                              quizQuestions.map((q, index) => (
+                                <div key={q.id} className={`question-card ${activeQuestionId === q.id ? 'active' : ''}`} onClick={() => setActiveQuestionId(q.id)}>
+                                  <div className="question-card-toolbar">
+                                    <span>Question {index + 1}</span>
+                                    <div>
+                                      <button type="button" className="icon-btn" title="Move up" onClick={() => moveQuestion(index, -1)} disabled={index === 0}>Up</button>
+                                      <button type="button" className="icon-btn" title="Move down" onClick={() => moveQuestion(index, 1)} disabled={index === quizQuestions.length - 1}>Down</button>
                                     </div>
                                   </div>
 
+                                  <div className="question-main-grid">
+                                    <label className="field">Question Title<input value={q.text} onChange={(e) => updateQuestion(q.id, 'text', e.target.value)} placeholder="Question" required /></label>
+                                    <label className="field">Question Type<select value={q.type} onChange={(e) => updateQuestion(q.id, 'type', e.target.value)}><option value="multiple_choice">Multiple Choice</option><option value="true_false">True or False</option><option value="identification">Identification</option></select></label>
+                                  </div>
+
+                                  <label className="field">Optional Description<textarea value={q.description || ''} onChange={(e) => updateQuestion(q.id, 'description', e.target.value)} placeholder="Description or instructions" rows={2} /></label>
+
                                   {q.type === 'multiple_choice' && (
-                                    <div style={{ background: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
-                                      <p style={{ margin: '0 0 0.75rem 0', fontWeight: 'bold', fontSize: '0.9rem' }}>Answer Options</p>
-                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                                        {q.options.map((opt, optIndex) => (
-                                          <div key={optIndex} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: String(q.correct_answer) === String(optIndex) ? 'rgba(77, 182, 172, 0.15)' : '#fff', padding: '0.5rem', borderRadius: '4px', border: String(q.correct_answer) === String(optIndex) ? '1px solid var(--primary)' : '1px solid #ddd' }}>
-                                            <input
-                                              type="radio"
-                                              name={`correct-${q.id}`}
-                                              checked={String(q.correct_answer) === String(optIndex)}
-                                              onChange={() => updateQuestion(q.id, 'correct_answer', String(optIndex))}
-                                              style={{ margin: 0, width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
-                                            />
-                                            <input
-                                              value={opt}
-                                              onChange={(e) => updateOption(q.id, optIndex, e.target.value)}
-                                              placeholder={`Option ${optIndex + 1}`}
-                                              required
-                                              style={{ flexGrow: 1, border: 'none', background: 'transparent', outline: 'none', padding: '0.25rem' }}
-                                            />
-                                          </div>
-                                        ))}
+                                    <div className="options-area">
+                                      {(q.options || []).map((opt, optIndex) => (
+                                        <div key={`${q.id}-${optIndex}`} className="option-row">
+                                          <input type="radio" name={`correct-${q.id}`} checked={String(q.correct_answer) === String(optIndex)} onChange={() => updateQuestion(q.id, 'correct_answer', String(optIndex))} aria-label={`Mark option ${optIndex + 1} correct`} />
+                                          <input value={opt} onChange={(e) => updateOption(q.id, optIndex, e.target.value)} placeholder={`Option ${optIndex + 1}`} required />
+                                          <button type="button" className="icon-btn danger" onClick={() => removeOption(q.id, optIndex)} disabled={(q.options || []).length <= 2}>Remove</button>
+                                        </div>
+                                      ))}
+                                      <div className="option-actions">
+                                        <button type="button" className="btn btn-secondary btn-small" onClick={() => addOption(q.id)}>Add Option</button>
+                                        <button type="button" className="btn btn-secondary btn-small" onClick={() => addOtherChoice(q.id)}>Add Other</button>
                                       </div>
-                                      <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-light)' }}>* Select the radio button next to the correct answer.</p>
                                     </div>
                                   )}
 
                                   {q.type === 'true_false' && (
-                                    <div style={{ background: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
-                                      <p style={{ margin: '0 0 0.75rem 0', fontWeight: 'bold', fontSize: '0.9rem' }}>Correct Answer</p>
-                                      <div style={{ display: 'flex', gap: '1.5rem' }}>
-                                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 1rem', background: '#fff', border: '1px solid #ddd', borderRadius: '4px' }}>
-                                          <input
-                                            type="radio"
-                                            name={`correct-${q.id}`}
-                                            checked={q.correct_answer === 'true'}
-                                            onChange={() => updateQuestion(q.id, 'correct_answer', 'true')}
-                                            style={{ margin: 0, width: '1.2rem', height: '1.2rem' }}
-                                          />
-                                          True
-                                        </label>
-                                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 1rem', background: '#fff', border: '1px solid #ddd', borderRadius: '4px' }}>
-                                          <input
-                                            type="radio"
-                                            name={`correct-${q.id}`}
-                                            checked={q.correct_answer === 'false'}
-                                            onChange={() => updateQuestion(q.id, 'correct_answer', 'false')}
-                                            style={{ margin: 0, width: '1.2rem', height: '1.2rem' }}
-                                          />
-                                          False
-                                        </label>
-                                      </div>
+                                    <div className="true-false-row">
+                                      {['true', 'false'].map((value) => (
+                                        <label key={value}><input type="radio" name={`correct-${q.id}`} checked={q.correct_answer === value} onChange={() => updateQuestion(q.id, 'correct_answer', value)} />{value === 'true' ? 'True' : 'False'}</label>
+                                      ))}
                                     </div>
                                   )}
 
-                                  {q.type === 'identification' && (
-                                    <div style={{ background: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
-                                      <label className="field" style={{ margin: 0 }}>
-                                        <strong style={{ fontSize: '0.9rem' }}>Exact Match Answer *</strong>
-                                        <input
-                                          value={q.correct_answer || ''}
-                                          onChange={(e) => updateQuestion(q.id, 'correct_answer', e.target.value)}
-                                          placeholder="e.g. Paris"
-                                          required
-                                          style={{ padding: '0.75rem', marginTop: '0.5rem' }}
-                                        />
-                                      </label>
-                                      <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-light)' }}>* Student's answer must match this exactly (case-insensitive).</p>
-                                    </div>
-                                  )}
+                                  {q.type === 'identification' && <label className="field">Correct Answer<input value={q.correct_answer || ''} onChange={(e) => updateQuestion(q.id, 'correct_answer', e.target.value)} placeholder="Exact answer" required /></label>}
 
+                                  <div className="question-footer">
+                                    <label className="toggle-field"><input type="checkbox" checked={q.required ?? true} onChange={(e) => updateQuestion(q.id, 'required', e.target.checked)} />Required</label>
+                                    <label className="field compact-field">Points<input type="number" min="1" value={q.points} onChange={(e) => updateQuestion(q.id, 'points', Number(e.target.value))} /></label>
+                                    <button type="button" className="btn btn-secondary btn-small" onClick={() => duplicateQuestion(q)}>Duplicate Question</button>
+                                    <button type="button" className="btn btn-danger btn-small" onClick={() => removeQuestion(q.id)}>Delete Question</button>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              ))
+                            )}
                           </div>
-                        )}
-                      </div>
 
-                      <div style={{ marginTop: '2rem', padding: '1rem', background: 'rgba(77, 182, 172, 0.1)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <p style={{ margin: 0, fontWeight: 'bold' }}>Total Questions: {quizQuestions.length}</p>
-                          <p style={{ margin: 0, color: 'var(--text-light)', fontSize: '0.9rem' }}>Total Points: {quizQuestions.reduce((sum, q) => sum + (Number(q.points) || 0), 0)}</p>
+                          <aside className="floating-quiz-toolbar" aria-label="Quiz builder toolbar">
+                            <button type="button" title="Add question" onClick={addQuestion}>+</button>
+                            <button type="button" title="Duplicate active question" onClick={() => { const activeQuestion = quizQuestions.find((question) => question.id === activeQuestionId); if (activeQuestion) duplicateQuestion(activeQuestion) }}>Copy</button>
+                          </aside>
                         </div>
-                        <button type="submit" className="btn btn-primary" disabled={savingQuiz || quizQuestions.length === 0} style={{ padding: '0.75rem 2rem', fontSize: '1.1rem' }}>
-                          {savingQuiz ? 'Saving Quiz...' : editingQuizId ? 'Update Quiz' : 'Publish Quiz'}
-                        </button>
-                      </div>
-                    </form>
-                  </article>
+
+                        <div className="quiz-settings-panel panel">
+                          <div className="panel-head"><h2>Quiz Settings</h2><span className="badge">{quizQuestions.length} questions</span></div>
+                          <div className="settings-checklist">
+                            <label className="toggle-field"><input type="checkbox" name="allow_retakes" checked={quizForm.allow_retakes} onChange={onQuizChange} />Allow Retakes</label>
+                            <label className="toggle-field"><input type="checkbox" name="shuffle_questions" checked={quizForm.shuffle_questions} onChange={onQuizChange} />Shuffle Questions</label>
+                            <label className="toggle-field"><input type="checkbox" name="shuffle_choices" checked={quizForm.shuffle_choices} onChange={onQuizChange} />Shuffle Choices</label>
+                            <label className="toggle-field"><input type="checkbox" name="auto_grade" checked={quizForm.auto_grade} onChange={onQuizChange} />Auto Grade</label>
+                            <label className="toggle-field"><input type="checkbox" name="show_correct_answers" checked={quizForm.show_correct_answers} onChange={onQuizChange} />Show Correct Answers</label>
+                            <label className="toggle-field"><input type="checkbox" name="require_all_questions" checked={quizForm.require_all_questions} onChange={onQuizChange} />Require All Questions</label>
+                            <label className="toggle-field"><input type="checkbox" name="instant_feedback" checked={quizForm.instant_feedback} onChange={onQuizChange} />Enable Instant Feedback</label>
+                            <label className="toggle-field"><input type="checkbox" name="is_hidden" checked={quizForm.is_hidden} onChange={onQuizChange} />Hidden from students</label>
+                          </div>
+                          <div className="answer-until-row">
+                            <label className="field">Answer Until Date<input type="date" value={(quizForm.answer_until || '').split('T')[0] || ''} onChange={(e) => updateAnswerUntilPart('date', e.target.value)} /></label>
+                            <label className="field">Answer Until Time<input type="time" value={(quizForm.answer_until || '').split('T')[1] || ''} onChange={(e) => updateAnswerUntilPart('time', e.target.value)} /></label>
+                            <label className="field">Passing Score<input type="number" name="passing_score" min="0" max="100" value={quizForm.passing_score} onChange={onQuizChange} /></label>
+                          </div>
+                        </div>
+
+                        <div className="quiz-builder-actions">
+                          <div><strong>Total Points: {quizQuestions.reduce((sum, q) => sum + (Number(q.points) || 0), 0)}</strong><p className="subtitle">{autoSavingDraft ? 'Autosaving draft...' : 'Drafts save to your teacher account.'}</p></div>
+                          <div className="flex-row">
+                            <button type="button" className="btn btn-secondary" onClick={saveDraft} disabled={savingDraft || savingQuiz}>{savingDraft ? 'Saving Draft...' : 'Save Draft'}</button>
+                            <button type="submit" className="btn btn-primary" disabled={savingQuiz || quizQuestions.length === 0}>{savingQuiz ? 'Saving...' : editingQuizId ? 'Update Quiz' : 'Publish Quiz'}</button>
+                          </div>
+                        </div>
+                      </form>
+                    </article>
+                  )}
+
+                  {activeQuizTab === 'recent_submissions' && (
+                    <article className="panel quiz-tab-panel">
+                      {!selectedResponseQuiz ? (
+                        <div className="quiz-empty-builder">
+                          <p>Select a quiz and click View Responses to see submissions.</p>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="panel-head">
+                            <div>
+                              <h2>{selectedResponseQuiz.title || 'Quiz'} Responses</h2>
+                              <p className="subtitle">Deadline: {selectedResponseQuiz.answer_until ? new Date(selectedResponseQuiz.answer_until).toLocaleString() : 'No deadline'}</p>
+                            </div>
+                            <button type="button" className="btn btn-secondary btn-small" onClick={() => viewQuizResponses(selectedResponseQuiz)} disabled={loadingCompletedQuizResults}>
+                              {loadingCompletedQuizResults ? 'Refreshing...' : 'Refresh'}
+                            </button>
+                          </div>
+
+                          <div className="cards-grid compact">
+                            <div className="metric-card"><p>Total Submissions</p><h3>{quizSubmissionStats.total}</h3></div>
+                            <div className="metric-card"><p>Average Score</p><h3>{quizSubmissionStats.averageScore.toFixed(1)}%</h3></div>
+                            <div className="metric-card"><p>Quiz Deadline</p><h3>{selectedResponseQuiz.answer_until ? new Date(selectedResponseQuiz.answer_until).toLocaleDateString() : 'None'}</h3></div>
+                          </div>
+
+                          {loadingCompletedQuizResults ? <p className="info-text">Loading results...</p> : displayQuizResults.length === 0 ? <p className="info-text">No submissions for this quiz yet.</p> : (
+                        <div className="submission-grid">
+                          {displayQuizResults.map((result) => {
+                            const passed = Number(result.score) >= 75
+                            return (
+                              <div key={result.id} className="submission-card">
+                                <div className="submission-card-head"><div><h3>{result.student_name || result.student_username || 'Student'}</h3><p>{result.quiz_title || 'Quiz'}</p></div><span className={`badge ${passed ? 'success' : 'danger'}`}>{passed ? 'Pass' : 'Fail'}</span></div>
+                                <div className="quiz-meta-grid"><div><span>Score</span><strong>{result.score ?? 0}%</strong></div><div><span>Submission Time</span><strong>{result.submitted_at ? new Date(result.submitted_at).toLocaleString() : 'Unknown'}</strong></div></div>
+                                <div className="quiz-card-actions"><button type="button" className="btn btn-secondary btn-small" onClick={() => window.alert(`Submission for ${result.student_name || 'Student'}: ${result.score ?? 0}%`)}>View Submission</button><button type="button" className="btn btn-secondary btn-small" onClick={() => openFeedbackComposer(result)}>Send Feedback</button><button type="button" className="btn btn-secondary btn-small" onClick={() => allowQuizRetake(result)}>Allow Retake</button></div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                          )}
+                        </>
+                      )}
+                    </article>
+                  )}
                 </section>
               )}
             </>
