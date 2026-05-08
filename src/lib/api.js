@@ -171,4 +171,11 @@ export async function unlinkChild(childUsername, token) {
   })
 }
 
+export async function deleteParentMessage(messageId, token) {
+  return apiRequest(`/parent/message/${messageId}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
 

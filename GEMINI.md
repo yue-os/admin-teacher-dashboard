@@ -1,7 +1,3 @@
-Here is a gemini.md file you can place in the root of your frontend repository. This file serves as a system prompt and architectural guideline for any AI assistant you use, ensuring that all code generated for the BatangAware admin, teacher, and parent dashboards meets production standards.
-
-Markdown
-
 # Context: BatangAware Dashboard Frontend
 
 ## Project Overview

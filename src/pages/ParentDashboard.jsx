@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import DashboardShell from '../components/DashboardShell'
-import { getParentStats, linkChild, unlinkChild, apiRequest } from '../lib/api'
+import { getParentStats, linkChild, unlinkChild, deleteParentMessage, apiRequest } from '../lib/api'
 import { saveSession } from '../lib/auth'
 
 const passwordReminderText = 'For better account security, you can update your password anytime in My Profile.'
@@ -159,7 +159,7 @@ function ParentDashboard({ session, onLogout }) {
   }, [session.token])
 
   useEffect(() => {
-    if (activeTab === 'messages') {
+    if (activeTab === 'messages' || activeTab === 'overview') {
       const timer = setTimeout(() => {
         void fetchMessages()
       }, 0)
@@ -181,6 +181,9 @@ function ParentDashboard({ session, onLogout }) {
     const conversationMap = new Map()
 
     messages.forEach((msg) => {
+      // Exclude linking requests from regular teacher chat
+      if (msg.class_name === 'Linking Request') return
+
       const teacherId = msg.sender_role === 'Teacher' 
         ? msg.sender_public_id 
         : msg.receiver_public_id
@@ -197,6 +200,10 @@ function ParentDashboard({ session, onLogout }) {
     })
 
     return Array.from(conversationMap.values())
+  }, [messages])
+
+  const pendingRequests = useMemo(() => {
+    return messages.filter((msg) => msg.class_name === 'Linking Request')
   }, [messages])
 
   const activeMessageContext = useMemo(() => {
@@ -350,6 +357,34 @@ function ParentDashboard({ session, onLogout }) {
       setError(err.message || 'Failed to link child')
     } finally {
       setLinking(false)
+    }
+  }
+
+  const handleAcceptRequest = async (request) => {
+    const username = request.sender_username || request.student_name
+    try {
+      setError('')
+      setSuccessMessage('')
+      await linkChild(username, session.token)
+      await deleteParentMessage(request.id, session.token)
+      setSuccessMessage(`Linked ${username} successfully.`)
+      await loadStats()
+      await fetchMessages()
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      setError(err.message || 'Failed to accept linking request')
+    }
+  }
+
+  const handleDenyRequest = async (request) => {
+    try {
+      setError('')
+      await deleteParentMessage(request.id, session.token)
+      setSuccessMessage('Linking request denied.')
+      await fetchMessages()
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      setError(err.message || 'Failed to deny linking request')
     }
   }
 
@@ -716,6 +751,40 @@ function ParentDashboard({ session, onLogout }) {
           </section>
 
           <section className="parent-overview-grid">
+            {pendingRequests.length > 0 && (
+              <article className="panel parent-requests-panel">
+                <div className="panel-head">
+                  <h2>Linking Requests</h2>
+                  <span className="badge bg-danger">{pendingRequests.length}</span>
+                </div>
+                <div className="request-list">
+                  {pendingRequests.map((request) => (
+                    <div key={request.id} className="request-card">
+                      <div className="request-info">
+                        <strong>{request.sender_name}</strong>
+                        <p>{request.content}</p>
+                        <small>{formatMessageTimestamp(request.created_at)}</small>
+                      </div>
+                      <div className="request-actions">
+                        <button 
+                          className="btn btn-primary btn-sm" 
+                          onClick={() => handleAcceptRequest(request)}
+                        >
+                          Accept
+                        </button>
+                        <button 
+                          className="btn btn-secondary btn-sm" 
+                          onClick={() => handleDenyRequest(request)}
+                        >
+                          Deny
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            )}
+
             <article className="panel parent-children-panel">
               <div className="panel-head">
                 <h2>Linked Children</h2>
