@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import DashboardShell from '../components/DashboardShell'
+import Loading from '../components/Loading'
 import { getParentStats, linkChild, unlinkChild, deleteParentMessage, apiRequest } from '../lib/api'
 import { saveSession } from '../lib/auth'
 
@@ -523,11 +524,11 @@ function ParentDashboard({ session, onLogout }) {
       username={session.username}
       onLogout={onLogout}
     >
-      {error && <p className="error-text panel">{error}</p>}
-      {successMessage && <p className="success-text panel">{successMessage}</p>}
+      {error && <p className="error-text panel" role="alert">{error}</p>}
+      {successMessage && <p className="success-text panel" role="status">{successMessage}</p>}
 
       {loading ? (
-        <p>Loading parent dashboard...</p>
+        <Loading message="Fetching family dashboard data..." />
       ) : (
         <>
           <div className="parent-actions">
@@ -736,11 +737,12 @@ function ParentDashboard({ session, onLogout }) {
           ) : (
             <>
           <section className="admin-analytics-grid parent-insight-grid">
-            {summaryCards.map((card) => (
+            {summaryCards.map((card, i) => (
               <button
                 key={card.key}
                 type="button"
-                className="metric-card admin-analytics-card"
+                className="metric-card admin-analytics-card animate-in scan-border"
+                style={{ '--index': i }}
                 onClick={() => setParentInsightModal(card.key)}
               >
                 <span>{card.label}</span>

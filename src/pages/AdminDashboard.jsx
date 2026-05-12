@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
 import DashboardShell from '../components/DashboardShell'
+import Loading from '../components/Loading'
 import { apiRequest } from '../lib/api'
 
 const USER_TEMPLATE = {
@@ -255,7 +256,7 @@ function AdminDashboard({ session, onLogout }) {
     [buildTrendData, summary],
   )
 
-  const COLORS = ['#4DB6AC', '#A4C639', '#FFC12D']
+  const COLORS = ['#1E40AF', '#3B82F6', '#F59E0B']
 
   const onFieldChange = (event) => {
     const { name, value } = event.target
@@ -879,8 +880,8 @@ function AdminDashboard({ session, onLogout }) {
       username={session.username}
       onLogout={onLogout}
     >
-      {error && <p className="error-text panel">{error}</p>}
-      {successMessage && <p className="success-text panel">{successMessage}</p>}
+      {error && <p className="error-text panel" role="alert">{error}</p>}
+      {successMessage && <p className="success-text panel" role="status">{successMessage}</p>}
       {passwordResetLink && (
         <div className="info-text panel">
           <strong>Manual reset link:</strong>
@@ -889,9 +890,7 @@ function AdminDashboard({ session, onLogout }) {
       )}
 
       {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem', color: '#64748b' }}>
-          <p>Loading dashboard data...</p>
-        </div>
+        <Loading message="Fetching administrative data..." />
       ) : (
         <>
           <nav className="tabs">
@@ -935,11 +934,12 @@ function AdminDashboard({ session, onLogout }) {
                 </button>
               </div>
               <section className="admin-analytics-grid">
-                {cards.map((card) => (
+                {cards.map((card, i) => (
                   <button
                     key={card.key}
                     type="button"
-                    className="metric-card admin-analytics-card"
+                    className="metric-card admin-analytics-card animate-in scan-border"
+                    style={{ '--index': i }}
                     onClick={() => setAnalyticsModal(card.key)}
                   >
                     <span>{card.label}</span>
@@ -1689,7 +1689,7 @@ function AdminDashboard({ session, onLogout }) {
                       <XAxis dataKey="name" />
                       <YAxis allowDecimals={false} />
                       <RechartsTooltip cursor={{ fill: 'rgba(77, 182, 172, 0.08)' }} />
-                      <Bar dataKey="active" fill="#4DB6AC" radius={[8, 8, 0, 0]} maxBarSize={52} />
+                      <Bar dataKey="active" fill="#1E40AF" radius={[8, 8, 0, 0]} maxBarSize={52} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1719,7 +1719,7 @@ function AdminDashboard({ session, onLogout }) {
                       <XAxis dataKey="name" />
                       <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
                       <RechartsTooltip formatter={(value) => `${value}%`} />
-                      <Line type="monotone" dataKey="completion" stroke="#4DB6AC" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="completion" stroke="#1E40AF" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -1740,7 +1740,7 @@ function AdminDashboard({ session, onLogout }) {
                       <XAxis dataKey="name" />
                       <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
                       <RechartsTooltip formatter={(value) => `${value}%`} cursor={{ fill: 'rgba(77, 182, 172, 0.08)' }} />
-                      <Bar dataKey="score" fill="#A4C639" radius={[8, 8, 0, 0]} maxBarSize={52} />
+                      <Bar dataKey="score" fill="#3B82F6" radius={[8, 8, 0, 0]} maxBarSize={52} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

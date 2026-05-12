@@ -1,13 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import './App.css'
 import ProtectedRoute from './components/ProtectedRoute'
-import LoginPage from './pages/LoginPage'
-import AdminDashboard from './pages/AdminDashboard'
-import TeacherDashboard from './pages/TeacherDashboard'
-import ParentDashboard from './pages/ParentDashboard'
-import ResetPasswordPage from './pages/ResetPasswordPage'
-import UnauthorizedPage from './pages/UnauthorizedPage'
+import ErrorBoundary from './components/ErrorBoundary'
+import Loading from './components/Loading'
+
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
+const TeacherDashboard = lazy(() => import('./pages/TeacherDashboard'))
+const ParentDashboard = lazy(() => import('./pages/ParentDashboard'))
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
+const UnauthorizedPage = lazy(() => import('./pages/UnauthorizedPage'))
+
 import { changePassword, loginUser } from './lib/api'
 import { clearSession, createSessionFromToken, loadSession, saveSession } from './lib/auth'
 
@@ -24,6 +28,23 @@ function App() {
   const [loginError, setLoginError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [passwordChange, setPasswordChange] = useState(null)
+
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'dashboard_auth_session') {
+        const nextSession = loadSession()
+        if (!nextSession && session) {
+          setSession(null)
+          navigate('/login', { replace: true })
+        } else if (nextSession && !session) {
+          setSession(nextSession)
+          navigate(getDashboardPath(nextSession.role), { replace: true })
+        }
+      }
+    }
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
+  }, [session, navigate])
 
   const homePath = useMemo(() => {
     return getDashboardPath(session?.role)
@@ -83,48 +104,52 @@ function App() {
   }
 
   return (
-    <Routes>
-      <Route
-        path="/login"
-        element={
-          <LoginPage
-            onLogin={handleLogin}
-            onChangePassword={handleChangePassword}
-            passwordChange={passwordChange}
-            isSubmitting={isSubmitting}
-            error={loginError}
+    <ErrorBoundary>
+      <Suspense fallback={<Loading fullScreen message="Initializing application..." />}>
+        <Routes>
+          <Route
+            path="/login"
+            element={
+              <LoginPage
+                onLogin={handleLogin}
+                onChangePassword={handleChangePassword}
+                passwordChange={passwordChange}
+                isSubmitting={isSubmitting}
+                error={loginError}
+              />
+            }
           />
-        }
-      />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route
-        path="/admin"
-        element={
-          <ProtectedRoute session={session} allowedRoles={['Admin']}>
-            <AdminDashboard session={session} onLogout={handleLogout} />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/teacher"
-        element={
-          <ProtectedRoute session={session} allowedRoles={['Teacher']}>
-            <TeacherDashboard session={session} onLogout={handleLogout} />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/parent"
-        element={
-          <ProtectedRoute session={session} allowedRoles={['Parent']}>
-            <ParentDashboard session={session} onLogout={handleLogout} />
-          </ProtectedRoute>
-        }
-      />
-      <Route path="/unauthorized" element={<UnauthorizedPage />} />
-      <Route path="/" element={<Navigate to={homePath} replace />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute session={session} allowedRoles={['Admin']}>
+                <AdminDashboard session={session} onLogout={handleLogout} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/teacher"
+            element={
+              <ProtectedRoute session={session} allowedRoles={['Teacher']}>
+                <TeacherDashboard session={session} onLogout={handleLogout} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/parent"
+            element={
+              <ProtectedRoute session={session} allowedRoles={['Parent']}>
+                <ParentDashboard session={session} onLogout={handleLogout} />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          <Route path="/" element={<Navigate to={homePath} replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   )
 }
 

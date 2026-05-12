@@ -1,40 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+
 :root {
-  --green: #A4C639;
-  --red: #F6534C;
-  --yellow: #FFC12D;
-  --teal: #4DB6AC;
+  --color-primary: #1E40AF;
+  --color-secondary: #3B82F6;
+  --color-cta: #F59E0B;
+  --color-background: #F8FAFC;
+  --color-text: #1E3A8A;
+
+  --green: #10B981;
+  --red: #EF4444;
+  --yellow: #F59E0B;
+  --teal: #14B8A6;
   --orange: #F59E0B;
   --purple: #7C3AED;
-  --text: #475569;
-  --text-h: #172033;
-  --bg: #f6f8f3;
+  
+  --text: var(--color-text);
+  --text-h: #1E3A8A;
+  --bg: var(--color-background);
   --panel-bg: #ffffff;
-  --border: #dfe8df;
+  --border: #E2E8F0;
   --input-bg: #ffffff;
-  --accent: var(--teal);
-  --accent-rgb: 77, 182, 172;
-  --accent-bg: rgba(77, 182, 172, 0.12);
-  --accent-border: rgba(77, 182, 172, 0.38);
-  --success: #58760e;
-  --success-bg: rgba(164, 198, 57, 0.18);
-  --warning: #9a6500;
-  --warning-bg: rgba(255, 193, 45, 0.2);
-  --danger: #c7332d;
-  --danger-bg: rgba(246, 83, 76, 0.12);
-  --danger-border: rgba(246, 83, 76, 0.3);
-  --shadow:
-    rgba(23, 32, 51, 0.08) 0 12px 28px -18px,
-    rgba(23, 32, 51, 0.06) 0 8px 18px -16px;
-  --shadow-hover:
-    rgba(23, 32, 51, 0.14) 0 18px 34px -18px,
-    rgba(23, 32, 51, 0.1) 0 10px 22px -18px;
+  
+  --accent: var(--color-primary);
+  --accent-rgb: 30, 64, 175;
+  --accent-bg: rgba(30, 64, 175, 0.1);
+  --accent-border: rgba(30, 64, 175, 0.3);
+  
+  --success: #059669;
+  --success-bg: rgba(16, 185, 129, 0.1);
+  --warning: #D97706;
+  --warning-bg: rgba(245, 158, 11, 0.1);
+  --danger: #DC2626;
+  --danger-bg: rgba(239, 68, 68, 0.1);
+  --danger-border: rgba(239, 68, 68, 0.3);
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
 
-  font: 16px/145% var(--sans);
-  letter-spacing: 0.1px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.15);
+
+  --glow-primary: 0 0 12px rgba(30, 64, 175, 0.4);
+  --glow-secondary: 0 0 12px rgba(59, 130, 246, 0.4);
+  --glow-cta: 0 0 12px rgba(245, 158, 11, 0.5);
+  --glow-success: 0 0 12px rgba(16, 185, 129, 0.4);
+  --glow-danger: 0 0 12px rgba(239, 68, 68, 0.4);
+
+  --sans: 'Fira Sans', system-ui, -apple-system, sans-serif;
+  --heading: 'Fira Code', monospace;
+  --mono: 'Fira Code', monospace;
+
+  font: 16px/1.5 var(--sans);
+  letter-spacing: 0.01em;
   color-scheme: light;
   color: var(--text);
   background: var(--bg);
@@ -44,18 +66,147 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Loading Spinner & Containers */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  gap: var(--space-md);
+  color: var(--color-primary);
+}
+
+.loading-container.fullscreen {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 10000;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--accent-bg);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error Boundary */
+.error-boundary-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: var(--space-lg);
+}
+
+/* Production Polish: Scrollbars & Selection */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--accent-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-rgb);
+}
+
+::selection {
+  background: var(--accent-bg);
+  color: var(--color-primary);
+}
+
+.animate-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* CRT Scanline Effect with subtle flicker */
+@keyframes flicker {
+  0% { opacity: 0.27861; }
+  5% { opacity: 0.34769; }
+  10% { opacity: 0.23604; }
+  15% { opacity: 0.30626; }
+  20% { opacity: 0.28128; }
+  25% { opacity: 0.32891; }
+  30% { opacity: 0.25833; }
+  35% { opacity: 0.31031; }
+  40% { opacity: 0.29941; }
+  45% { opacity: 0.34673; }
+  50% { opacity: 0.21162; }
+  55% { opacity: 0.34587; }
+  60% { opacity: 0.33236; }
+  65% { opacity: 0.22519; }
+  70% { opacity: 0.21995; }
+  75% { opacity: 0.31507; }
+  80% { opacity: 0.24527; }
+  85% { opacity: 0.21045; }
+  90% { opacity: 0.37033; }
+  95% { opacity: 0.25521; }
+  100% { opacity: 0.23742; }
+}
+
+body::before {
+  content: " ";
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.02) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.01), rgba(0, 255, 0, 0.005), rgba(0, 0, 255, 0.01));
+  z-index: 9999;
+  background-size: 100% 2px, 3px 100%;
+  pointer-events: none;
+  opacity: 0.3;
+  animation: flicker 0.15s infinite;
+}
+
+/* Moving Grid Background */
+@keyframes backgroundScroll {
+  from { background-position: 0 0; }
+  to { background-position: 50px 50px; }
+}
+
 body {
   margin: 0;
   min-height: 100svh;
-  background:
-    linear-gradient(135deg, rgba(164, 198, 57, 0.12), transparent 32%),
-    linear-gradient(315deg, rgba(77, 182, 172, 0.12), transparent 34%),
-    var(--bg);
+  background-color: var(--bg);
+  background-image: 
+    linear-gradient(rgba(30, 64, 175, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 64, 175, 0.03) 1px, transparent 1px),
+    radial-gradient(at 0% 0%, rgba(30, 64, 175, 0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(59, 130, 246, 0.05) 0px, transparent 50%);
+  background-size: 50px 50px, 50px 50px, 100% 100%, 100% 100%;
+  animation: backgroundScroll 20s linear infinite;
+  position: relative;
 }
 
 #root {
   min-height: 100svh;
+  position: relative;
+  z-index: 1;
 }
+
 
 h1,
 h2 {

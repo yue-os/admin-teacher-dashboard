@@ -58,11 +58,17 @@ function ResetPasswordPage() {
   }
 
   return (
-    <div className="auth-layout">
-      <section className="auth-card reset-password-card">
+    <div className="auth-layout login-page-bg">
+      <div className="retro-grid" aria-hidden="true" />
+      <div className="floating-particles" aria-hidden="true">
+        {[...Array(20)].map((_, i) => (
+          <span key={i} style={{ '--index': i }} />
+        ))}
+      </div>
+      <section className="auth-card reset-password-card animate-in cyber-card">
         <div className="auth-brand">
           <img className="brand-logo login-logo" src="/batangaware-logo.png" alt="BatangAware" />
-          <h1>Reset Password</h1>
+          <h1 className="neon-text glitch-hover">Reset Password</h1>
           <p className="subtitle">Set a new password using your approved reset link.</p>
         </div>
 

@@ -53,18 +53,18 @@ function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, er
   }
 
   return (
-    <div className="auth-layout">
-      <section className="auth-card">
+    <div className="auth-layout login-page-bg">
+      <div className="retro-grid" aria-hidden="true" />
+      <div className="floating-particles" aria-hidden="true">
+        {[...Array(20)].map((_, i) => (
+          <span key={i} style={{ '--index': i }} />
+        ))}
+      </div>
+      <section className="auth-card animate-in cyber-card">
         <div className="auth-brand">
           <img className="brand-logo login-logo" src="/batangaware-logo.png" alt="BatangAware" />
-          <h1>BatangAware Dashboard</h1>
-          <p className="subtitle">Secure sign-in for admin, teacher, and parent dashboards.</p>
-          <div className="palette-strip" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
+          <h1 className="neon-text glitch-hover">BatangAware Dashboard</h1>
+          <p className="subtitle">Secure sign-in for the gaming & education ecosystem.</p>
         </div>
 
         {passwordChange ? (

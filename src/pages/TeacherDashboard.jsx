@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
 import DashboardShell from '../components/DashboardShell'
+import Loading from '../components/Loading'
 import { apiRequest } from '../lib/api'
 import { saveSession } from '../lib/auth'
 
@@ -655,7 +656,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       title: 'Students in Class',
       subtitle: 'Number of students over time.',
       dataKey: 'students',
-      color: '#4DB6AC',
+      color: '#1E40AF',
       type: 'count',
       suffix: '',
     },
@@ -663,7 +664,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       title: 'Parents Linked',
       subtitle: 'Parent connection trend for this class.',
       dataKey: 'parents',
-      color: '#A4C639',
+      color: '#3B82F6',
       type: 'count',
       suffix: '',
     },
@@ -671,7 +672,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       title: 'Average Quiz Score',
       subtitle: 'Quiz score trend over the selected period.',
       dataKey: 'score',
-      color: '#4DB6AC',
+      color: '#1E40AF',
       type: 'line',
       suffix: '%',
     },
@@ -679,7 +680,7 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       title: 'Overall Completion Rate',
       subtitle: 'Completion percentage trend over the selected period.',
       dataKey: 'completion',
-      color: '#A4C639',
+      color: '#3B82F6',
       type: 'line',
       suffix: '%',
     },
@@ -1519,11 +1520,11 @@ const createAnnouncement = async (event) => {
       username={session.username}
       onLogout={onLogout}
     >
-      {error && <p className="error-text panel">{error}</p>}
-      {successMessage && <p className="success-text panel">{successMessage}</p>}
+      {error && <p className="error-text panel" role="alert">{error}</p>}
+      {successMessage && <p className="success-text panel" role="status">{successMessage}</p>}
 
       {loading ? (
-        <p>Loading classroom overview...</p>
+        <Loading message="Fetching classroom data..." />
       ) : (
         <>
           {/* Top Right Header Section - Only My Profile button */}
@@ -1674,9 +1675,13 @@ const createAnnouncement = async (event) => {
                   </article>
 
                   <div className="admin-analytics-grid">
-                    {classMetrics.map((metric) => (
+                    {classMetrics.map((metric, i) => (
                       metric.clickable === false ? (
-                        <article key={metric.key} className="metric-card admin-analytics-card static">
+                        <article 
+                          key={metric.key} 
+                          className="metric-card admin-analytics-card static animate-in scan-border"
+                          style={{ '--index': i }}
+                        >
                           <span>{metric.label}</span>
                           <strong>{metric.value}</strong>
                           <small>{metric.description}</small>
@@ -1685,7 +1690,8 @@ const createAnnouncement = async (event) => {
                         <button
                           key={metric.key}
                           type="button"
-                          className="metric-card admin-analytics-card"
+                          className="metric-card admin-analytics-card animate-in scan-border"
+                          style={{ '--index': i }}
                           onClick={() => setTeacherAnalyticsModal(metric.key)}
                         >
                           <span>{metric.label}</span>
@@ -1909,17 +1915,26 @@ const createAnnouncement = async (event) => {
                           .map((a, i) => (
                             <div key={a.id || i} style={{ padding: '1rem', background: '#f9fafb', borderRadius: '8px', borderLeft: '4px solid var(--primary)' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                <strong>{a.title}</strong>
+                                <strong>{a.title} {a.is_hidden && <span className="badge danger" style={{ marginLeft: '8px' }}>Hidden</span>}</strong>
                                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                                   <small style={{ color: '#666' }}>{a.created_at ? new Date(a.created_at).toLocaleDateString() : 'Just now'}</small>
                                   {a.id && (
-                                    <button 
-                                      type="button"
-                                      onClick={() => deleteAnnouncement(a.id)}
-                                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.875rem' }}
-                                    >
-                                      Delete
-                                    </button>
+                                    <>
+                                      <button 
+                                        type="button"
+                                        onClick={() => toggleAnnouncementVisibility(a)}
+                                        style={{ background: 'transparent', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: '0.875rem' }}
+                                      >
+                                        {a.is_hidden ? 'Unhide' : 'Hide'}
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        onClick={() => deleteAnnouncement(a.id)}
+                                        style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.875rem' }}
+                                      >
+                                        Delete
+                                      </button>
+                                    </>
                                   )}
                                 </div>
                               </div>
@@ -2333,6 +2348,53 @@ const createAnnouncement = async (event) => {
               </div>
             </form>
           </article>
+        </div>
+      )}
+
+      {teacherAnalyticsModal && (
+        <div className="analytics-modal-overlay" role="presentation" onClick={() => setTeacherAnalyticsModal(null)}>
+          <section className="analytics-modal panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <button className="analytics-modal-close" type="button" aria-label="Close analytics modal" onClick={() => setTeacherAnalyticsModal(null)}>
+              x
+            </button>
+
+            {(() => {
+              const config = teacherAnalyticsConfig[teacherAnalyticsModal];
+              const data = teacherAnalyticsData[teacherAnalyticsModal];
+              if (!config || !data) return null;
+
+              return (
+                <>
+                  <div className="analytics-modal-head">
+                    <span>{config.title}</span>
+                    <h2 className="neon-text">Performance Trend</h2>
+                    <p>{config.subtitle}</p>
+                  </div>
+                  <div className="analytics-chart tall">
+                    <ResponsiveContainer width="100%" height="100%">
+                      {config.type === 'count' ? (
+                        <BarChart data={data} margin={{ top: 12, right: 18, left: -12, bottom: 4 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="name" />
+                          <YAxis allowDecimals={false} />
+                          <RechartsTooltip cursor={{ fill: 'rgba(30, 64, 175, 0.05)' }} />
+                          <Bar dataKey={config.dataKey} fill={config.color} radius={[8, 8, 0, 0]} maxBarSize={52} />
+                        </BarChart>
+                      ) : (
+                        <LineChart data={data} margin={{ top: 12, right: 18, left: -12, bottom: 4 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="name" />
+                          <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
+                          <RechartsTooltip formatter={(value) => `${value}%`} />
+                          <Line type="monotone" dataKey={config.dataKey} stroke={config.color} strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                        </LineChart>
+                      )}
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              );
+            })()}
+          </section>
         </div>
       )}
     </DashboardShell>
