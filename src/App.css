@@ -84,12 +84,12 @@
 }
 
 .auth-card {
-  width: min(900px, 100%);
-  padding: clamp(24px, 5vw, 48px);
-  text-align: left;
+  width: min(480px, 100%);
+  padding: clamp(32px, 5vw, 48px);
+  text-align: center;
   display: grid;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(300px, 1fr);
-  gap: clamp(24px, 6vw, 64px);
+  grid-template-columns: 1fr;
+  gap: clamp(24px, 5vw, 32px);
   align-items: center;
   position: relative;
   overflow: hidden;
@@ -113,7 +113,7 @@
 
 .auth-brand {
   display: grid;
-  gap: 12px;
+  gap: clamp(8px, 2vw, 12px);
   justify-items: center;
   text-align: center;
 }
@@ -124,10 +124,16 @@
 }
 
 .login-logo {
-  width: min(220px, 100%);
+  width: clamp(140px, 40vw, 220px);
   height: auto;
   justify-self: center;
-  margin-bottom: 6px;
+  margin-bottom: clamp(4px, 1.5vw, 6px);
+}
+
+.auth-brand h1 {
+  font-size: clamp(1.4rem, 5vw, 1.8rem);
+  line-height: 1.2;
+  margin: 0;
 }
 
 .header-logo {
@@ -251,8 +257,10 @@
 
 .subtitle {
   color: var(--text);
-  margin: 8px 0 0;
+  margin: clamp(6px, 1.5vw, 8px) auto 0;
   max-width: 68ch;
+  line-height: 1.5;
+  font-size: clamp(13px, 2.5vw, 15px);
 }
 
 .cards-grid {
@@ -787,7 +795,8 @@
 
 .form-grid {
   display: grid;
-  gap: 12px;
+  gap: clamp(12px, 2.5vw, 16px);
+  width: 100%;
 }
 
 .field-row {
@@ -798,15 +807,16 @@
 
 .field {
   display: grid;
-  gap: 6px;
-  font-size: 14px;
+  gap: clamp(6px, 1.5vw, 8px);
+  font-size: clamp(13px, 2vw, 14px);
   color: var(--text-h);
+  text-align: left;
 }
 
 input,
 select,
 textarea {
-  padding: 12px 14px;
+  padding: clamp(10px, 2vw, 12px) clamp(12px, 2.5vw, 16px);
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--input-bg);
@@ -817,6 +827,7 @@ textarea {
   width: 100%;
   box-sizing: border-box;
   transition: all 0.2s ease;
+  font-size: clamp(14px, 2vw, 15px);
 }
 
 input:focus,
@@ -830,10 +841,12 @@ textarea:focus {
 .btn {
   border: 1px solid transparent;
   border-radius: 8px;
-  padding: 9px 14px;
+  padding: clamp(10px, 2vw, 12px) clamp(12px, 2.5vw, 14px);
   font-weight: 600;
   cursor: pointer;
-  min-height: 40px;
+  min-height: clamp(40px, 8vw, 44px);
+  width: 100%;
+  font-size: clamp(14px, 2vw, 15px);
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease,
@@ -1181,7 +1194,7 @@ tr:last-child td {
   box-shadow: var(--shadow-sm);
 }
 
-@media (max-width: 550px) {
+@media (max-width: 400px) {
   .mobile-tab-switcher {
     display: block;
   }
@@ -2602,7 +2615,8 @@ tr:last-child td {
 
   .actions-cell .btn,
   .panel-head .btn,
-  .user-form-footer .btn {
+  .user-form-footer .btn,
+  .form-grid .btn {
     width: 100%;
   }
 
@@ -2730,15 +2744,19 @@ tr:last-child td {
   }
 
   .auth-layout {
-    padding: 32px 16px;
-    place-items: center;
+    padding: 20px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     align-items: center;
-    display: grid;
+    min-height: 100svh;
   }
 
   .auth-card {
-    padding: 24px;
-    gap: 32px;
+    padding: clamp(16px, 5vw, 24px);
+    gap: clamp(16px, 5vw, 32px);
+    width: 100%;
+    max-width: 420px;
   }
 
   .auth-brand {
@@ -2746,8 +2764,9 @@ tr:last-child td {
   }
 
   .auth-brand h1 {
-    font-size: 1.4rem;
+    font-size: clamp(1.2rem, 5vw, 1.4rem);
     line-height: 1.2;
+    margin: 0;
   }
 
   .auth-brand .subtitle {
@@ -2755,7 +2774,18 @@ tr:last-child td {
   }
 
   .login-logo {
-    width: 140px;
+    width: clamp(100px, 30vw, 140px);
+    margin-bottom: 4px;
+  }
+
+  .form-grid {
+    gap: 14px;
+  }
+
+  input, select, .btn {
+    min-height: 42px;
+    padding: 10px 12px;
+    font-size: 14px;
   }
 
   .app-header {
