@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { apiRequest, loginUser } from '../src/lib/api';
 
 describe('api.js', () => {
@@ -70,7 +70,7 @@ describe('api.js', () => {
         const result = await loginUser('teach', '123');
         expect(result).toHaveProperty('access_token');
         expect(result.user.role).toBe('Teacher');
-      } catch (e) {
+      } catch {
         // Skip if backend down
       }
     });
@@ -80,7 +80,7 @@ describe('api.js', () => {
         const result = await loginUser('ParentJane', 'parent123');
         expect(result).toHaveProperty('access_token');
         expect(result.user.role).toBe('Parent');
-      } catch (e) {
+      } catch {
         // Skip if backend down
       }
     });

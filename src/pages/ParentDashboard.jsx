@@ -540,7 +540,20 @@ function ParentDashboard({ session, onLogout }) {
             </button>
           </div>
 
-          <nav className="tabs parent-tabs">
+          <div className="mobile-tab-switcher">
+            <select 
+              value={activeTab} 
+              onChange={(e) => setActiveTab(e.target.value)}
+              className="btn btn-secondary"
+              style={{ width: '100%', textAlign: 'left', fontWeight: 'bold' }}
+            >
+              <option value="overview">Overview</option>
+              <option value="messages">Teacher Messages</option>
+              <option value="profile">My Profile</option>
+            </select>
+          </div>
+
+          <nav className="tabs parent-tabs desktop-tabs">
             <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
             <button className={`tab ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => setActiveTab('messages')}>Teacher Messages</button>
           </nav>

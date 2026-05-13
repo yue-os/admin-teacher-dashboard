@@ -1528,7 +1528,7 @@ const createAnnouncement = async (event) => {
       ) : (
         <>
           {/* Top Right Header Section - Only My Profile button */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem', marginBottom: '1rem' }}>
+          <div className="profile-btn-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem', marginBottom: '1rem' }}>
             <button 
               className={`btn ${activeTab === 'profile' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setActiveTab('profile')}
@@ -1580,7 +1580,25 @@ const createAnnouncement = async (event) => {
             </div>
           </header>
 
-          <nav className="tabs">
+          <div className="mobile-tab-switcher">
+            <select 
+              value={activeTab} 
+              onChange={(e) => setActiveTab(e.target.value)}
+              disabled={!selectedClassId && activeTab !== 'profile'}
+              className="btn btn-secondary"
+              style={{ width: '100%', textAlign: 'left', fontWeight: 'bold' }}
+            >
+              <option value="students">Students & Parents</option>
+              <option value="parents">Messages</option>
+              <option value="announcements">Announcements</option>
+              <option value="lobbies">Lobbies</option>
+              <option value="quizzes">Quizzes</option>
+              <option value="analytics">Analytics</option>
+              <option value="profile">My Profile</option>
+            </select>
+          </div>
+
+          <nav className="tabs desktop-tabs">
             <button disabled={!selectedClassId} className={`tab ${activeTab === 'students' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('students')}>Students & Parents</button>
             <button disabled={!selectedClassId} className={`tab ${activeTab === 'parents' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('parents')}>Messages</button>
             <button disabled={!selectedClassId} className={`tab ${activeTab === 'announcements' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('announcements')}>Announcements</button>

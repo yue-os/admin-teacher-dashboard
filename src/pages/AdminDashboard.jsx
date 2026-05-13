@@ -893,7 +893,22 @@ function AdminDashboard({ session, onLogout }) {
         <Loading message="Fetching administrative data..." />
       ) : (
         <>
-          <nav className="tabs">
+          <div className="mobile-tab-switcher">
+            <select 
+              value={activeTab} 
+              onChange={(e) => setActiveTab(e.target.value)}
+              className="btn btn-secondary"
+              style={{ width: '100%', textAlign: 'left', fontWeight: 'bold' }}
+            >
+              <option value="analytics">Analytics</option>
+              <option value="users">User Management</option>
+              <option value="csv">Bulk Upload (CSV)</option>
+              <option value="classes">Class Management</option>
+              <option value="password-resets">Password Resets</option>
+            </select>
+          </div>
+
+          <nav className="tabs desktop-tabs">
             <button
               className={`tab ${activeTab === 'analytics' ? 'active' : ''}`}
               onClick={() => setActiveTab('analytics')}
