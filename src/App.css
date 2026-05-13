@@ -84,12 +84,12 @@
 }
 
 .auth-card {
-  width: min(480px, 100%);
-  padding: clamp(32px, 5vw, 48px);
-  text-align: center;
+  width: min(1000px, 100%);
+  padding: clamp(24px, 5vw, 48px);
+  text-align: left;
   display: grid;
-  grid-template-columns: 1fr;
-  gap: clamp(24px, 5vw, 32px);
+  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+  gap: clamp(24px, 6vw, 64px);
   align-items: center;
   position: relative;
   overflow: hidden;
@@ -113,9 +113,9 @@
 
 .auth-brand {
   display: grid;
-  gap: clamp(8px, 2vw, 12px);
-  justify-items: center;
-  text-align: center;
+  gap: clamp(8px, 2vw, 16px);
+  justify-items: start;
+  text-align: left;
 }
 
 .brand-logo {
@@ -124,14 +124,14 @@
 }
 
 .login-logo {
-  width: clamp(140px, 40vw, 220px);
+  width: min(240px, 100%);
   height: auto;
-  justify-self: center;
-  margin-bottom: clamp(4px, 1.5vw, 6px);
+  justify-self: start;
+  margin-bottom: 8px;
 }
 
 .auth-brand h1 {
-  font-size: clamp(1.4rem, 5vw, 1.8rem);
+  font-size: clamp(1.6rem, 3.5vw, 2.4rem);
   line-height: 1.2;
   margin: 0;
 }
@@ -2466,6 +2466,16 @@ tr:last-child td {
     grid-template-columns: 1fr;
     max-width: 520px;
     margin: 0 auto;
+    text-align: center;
+  }
+
+  .auth-brand {
+    justify-items: center;
+    text-align: center;
+  }
+
+  .login-logo {
+    justify-self: center;
   }
 
   .app-header,
@@ -2757,10 +2767,13 @@ tr:last-child td {
     gap: clamp(16px, 5vw, 32px);
     width: 100%;
     max-width: 420px;
+    text-align: center;
   }
 
   .auth-brand {
     gap: 8px;
+    justify-items: center;
+    text-align: center;
   }
 
   .auth-brand h1 {
@@ -2776,6 +2789,7 @@ tr:last-child td {
   .login-logo {
     width: clamp(100px, 30vw, 140px);
     margin-bottom: 4px;
+    justify-self: center;
   }
 
   .form-grid {
