@@ -1355,6 +1355,7 @@ const createAnnouncement = async (event) => {
     const status = serverStatus?.status || (serverStatus?.online ? 'Not yet started' : 'Created')
     const currentPlayers = serverStatus?.current_players ?? serverStatus?.count ?? lobby.player_count ?? 0
     const requiredPlayers = serverStatus?.required_players ?? lobby.required_players ?? 4
+    const teacherLobby = Boolean(serverStatus?.teacher_lobby ?? lobby.teacher_lobby ?? lobby.persistent)
 
     return {
       id: lobby.public_id || lobby.id,
@@ -1369,6 +1370,7 @@ const createAnnouncement = async (event) => {
       currentPlayers,
       requiredPlayers,
       persistent: Boolean(lobby.persistent),
+      teacherLobby,
       status,
       online: Boolean(serverStatus?.online),
       joinable: Boolean(serverStatus?.joinable ?? lobby.persistent),
@@ -1433,7 +1435,7 @@ const createAnnouncement = async (event) => {
     }
 
     const selectedPlayers = Number(lobbyForm.requiredPlayers)
-    const requiredPlayers = selectedPlayers + 1
+    const requiredPlayers = selectedPlayers
     const lobbyEndpoint = {
       ip: generatedLobbyEndpoint.ip,
       port: generatedLobbyEndpoint.port,
@@ -1465,7 +1467,7 @@ const createAnnouncement = async (event) => {
       ])
       setLobbyForm({ name: '', requiredPlayers: 4 })
       setSuccessMessage(
-        `${result.message || 'Lobby hosted successfully.'} Endpoint: ${nextLobby.ip}:${nextLobby.port}. Total slots: ${requiredPlayers}`,
+        `${result.message || 'Lobby hosted successfully.'} Endpoint: ${nextLobby.ip}:${nextLobby.port}. Total slots: ${requiredPlayers}. The first joiner will host the game from the server side.`,
       )
       setTimeout(() => setSuccessMessage(''), 3000)
       await fetchLobbies()
@@ -2041,12 +2043,12 @@ const createAnnouncement = async (event) => {
 
                       <label className="field">
                         Total required slots
-                        <input value={Number(lobbyForm.requiredPlayers) + 1} readOnly />
+                        <input value={Number(lobbyForm.requiredPlayers)} readOnly />
                       </label>
 
                       {lastHostedLobby && String(lastHostedLobby.classId) === String(selectedClassId) && (
                         <div className="success-text panel" style={{ marginTop: '1rem', background: 'rgba(164, 198, 57, 0.1)', borderColor: 'var(--success)' }}>
-                          <p style={{ margin: 0 }}><strong>Lobby Active:</strong> {lastHostedLobby.name}</p>
+                          <p style={{ margin: 0 }}><strong>Lobby Active:</strong> {lastHostedLobby.name}{lastHostedLobby.teacherLobby ? ' (Server-side)' : ''}</p>
                           <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             Join Code: <code style={{ userSelect: 'all', fontSize: '1.2rem', padding: '0.2rem 0.5rem', background: '#fff', border: '1px solid #ccc' }}>{lastHostedLobby.ip}:{lastHostedLobby.port}</code>
                             <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => copyLobbyCode(`${lastHostedLobby.ip}:${lastHostedLobby.port}`)}>Copy</button>
