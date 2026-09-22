@@ -523,6 +523,18 @@ function ParentDashboard({ session, onLogout }) {
       role={session.role}
       username={session.username}
       onLogout={onLogout}
+      headerActions={
+        <div className="parent-header-actions">
+          <button
+            className={`btn parent-profile-access ${activeTab === 'profile' ? 'btn-primary' : 'btn-secondary'}`}
+            type="button"
+            onClick={() => setActiveTab('profile')}
+          >
+            My Profile
+          </button>
+          <button className="btn btn-danger" type="button" onClick={onLogout}>Log out</button>
+        </div>
+      }
     >
       {error && <p className="error-text panel" role="alert">{error}</p>}
       {successMessage && <p className="success-text panel" role="status">{successMessage}</p>}
@@ -531,14 +543,6 @@ function ParentDashboard({ session, onLogout }) {
         <Loading message="Fetching family dashboard data..." />
       ) : (
         <>
-          <div className="parent-actions">
-            <button 
-              className={`btn ${activeTab === 'profile' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setActiveTab(activeTab === 'profile' ? 'overview' : 'profile')}
-            >
-              My Profile
-            </button>
-          </div>
 
           <div className="mobile-tab-switcher">
             <select 
@@ -563,7 +567,6 @@ function ParentDashboard({ session, onLogout }) {
               <article className="panel parent-profile-card">
                 <div className="panel-head">
                   <h2>Account Information</h2>
-                  <button className="btn btn-danger" onClick={onLogout}>Log out</button>
                 </div>
 
                 <div className="profile-details">
@@ -749,19 +752,17 @@ function ParentDashboard({ session, onLogout }) {
             </section>
           ) : (
             <>
-          <section className="admin-analytics-grid parent-insight-grid">
+          <section className="admin-analytics-grid parent-insight-grid" aria-label="Family progress summary">
             {summaryCards.map((card, i) => (
-              <button
+              <article
                 key={card.key}
-                type="button"
-                className="metric-card admin-analytics-card animate-in scan-border"
+                className="parent-summary-card animate-in"
                 style={{ '--index': i }}
-                onClick={() => setParentInsightModal(card.key)}
               >
-                <span>{card.label}</span>
+                <span className="parent-summary-label">{card.label}</span>
                 <strong>{card.value}</strong>
-                <small>{card.description}</small>
-              </button>
+                <small className="parent-summary-description">{card.description}</small>
+              </article>
             ))}
           </section>
 
@@ -828,26 +829,28 @@ function ParentDashboard({ session, onLogout }) {
               )}
             </article>
 
-            <article className="panel parent-link-panel">
-              <h2>Link a Child</h2>
-              <form className="form-grid" onSubmit={handleLinkChild}>
-                <label className="field">
-                  Child username, email, public ID, or full name
-                  <input
-                    type="text"
-                    value={childUsername}
-                    onChange={(event) => setChildUsername(event.target.value)}
-                    placeholder="Enter student identifier"
-                    required
-                  />
-                </label>
-                <button className="btn btn-primary" type="submit" disabled={linking}>
-                  {linking ? 'Linking...' : 'Link Child'}
-                </button>
-              </form>
+            <div className="parent-child-workflow">
+              <article className="panel parent-link-panel">
+                <h2>Link a Child</h2>
+                <form className="form-grid" onSubmit={handleLinkChild}>
+                  <label className="field">
+                    Child username, email, public ID, or full name
+                    <input
+                      type="text"
+                      value={childUsername}
+                      onChange={(event) => setChildUsername(event.target.value)}
+                      placeholder="Enter student identifier"
+                      required
+                    />
+                  </label>
+                  <button className="btn btn-primary" type="submit" disabled={linking}>
+                    {linking ? 'Linking...' : 'Link Child'}
+                  </button>
+                </form>
+              </article>
 
-              <div className="selected-child-panel">
-                <h3>Selected Child</h3>
+              <article className="panel selected-child-panel">
+                <h2>Selected Child</h2>
                 {selectedChild ? (
                   <>
                     <strong className="selected-child-name">{selectedChild.child}</strong>
@@ -868,8 +871,8 @@ function ParentDashboard({ session, onLogout }) {
                 ) : (
                   <p className="info-text">Select a child to view details and unlink them.</p>
                 )}
-              </div>
-            </article>
+              </article>
+            </div>
           </section>
 
           <section className="parent-record-grid">

@@ -969,17 +969,12 @@ function AdminDashboard({ session, onLogout }) {
           {activeTab === 'users' && (
             <>
               <section className="user-management-grid">
-                <article className="panel user-form-panel">
+                {!editingUserId && (<article className="panel user-form-panel">
                   <div className="panel-head">
                     <div>
-                      <h2>{editingUserId ? 'Edit User' : 'Create User'}</h2>
+                      <h2>Create User</h2>
                       <p className="subtitle">Create account identity only. Class membership is managed in Class Management.</p>
                     </div>
-                    {editingUserId && (
-                      <button className="btn btn-ghost" type="button" onClick={resetForm}>
-                        Cancel edit
-                      </button>
-                    )}
                   </div>
 
                   <form className="form-grid user-form" onSubmit={submitUser}>
@@ -1016,7 +1011,7 @@ function AdminDashboard({ session, onLogout }) {
                         Temporary credentials are generated after creation.
                       </span>
                       <button className="btn btn-primary" type="submit" disabled={saving}>
-                        {saving ? 'Saving...' : editingUserId ? 'Update user' : 'Create user'}
+                        {saving ? 'Saving...' : 'Create user'}
                       </button>
                     </div>
                   </form>
@@ -1037,7 +1032,7 @@ function AdminDashboard({ session, onLogout }) {
                       </div>
                     </div>
                   )}
-                </article>
+                </article>)}
 
                 <aside className="user-summary-panel">
                   {[
@@ -1054,6 +1049,50 @@ function AdminDashboard({ session, onLogout }) {
                 </aside>
               </section>
 
+
+              {editingUserId && (
+                <div className="analytics-modal-overlay user-edit-overlay" role="presentation" onClick={resetForm}>
+                  <section className="panel panel-modal user-edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-user-title" onClick={(event) => event.stopPropagation()}>
+                    <button className="analytics-modal-close" type="button" aria-label="Close edit user dialog" onClick={resetForm}>×</button>
+                    <div className="analytics-modal-head">
+                      <span>User management</span>
+                      <h2 id="edit-user-title">Edit User</h2>
+                      <p>Update this account's details, then save your changes.</p>
+                    </div>
+                    <form className="form-grid user-form" onSubmit={submitUser}>
+                      <div className="field-row">
+                        <label className="field">
+                          First name
+                          <input name="first_name" value={form.first_name} onChange={onFieldChange} required />
+                        </label>
+                        <label className="field">
+                          Last name
+                          <input name="last_name" value={form.last_name} onChange={onFieldChange} required />
+                        </label>
+                      </div>
+                      <div className="field-row">
+                        <label className="field">
+                          Email
+                          <input name="email" type="email" value={form.email} onChange={onFieldChange} required />
+                        </label>
+                        <label className="field">
+                          Role
+                          <select name="role" value={form.role} onChange={onFieldChange}>
+                            <option value="Student">Student</option>
+                            <option value="Teacher">Teacher</option>
+                            <option value="Parent">Parent</option>
+                            <option value="Admin">Admin</option>
+                          </select>
+                        </label>
+                      </div>
+                      <div className="user-form-footer">
+                        <button className="btn btn-ghost" type="button" onClick={resetForm}>Cancel edit</button>
+                        <button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Update user'}</button>
+                      </div>
+                    </form>
+                  </section>
+                </div>
+              )}
               <article className="panel users-list-panel">
                 <div className="panel-head users-list-head">
                   <div>
@@ -1222,35 +1261,37 @@ function AdminDashboard({ session, onLogout }) {
             </section>
           )}
 
-          {activeTab === 'csv' && (
-            <article className="panel">
-              <h2>Bulk User Import (CSV)</h2>
-              <p className="subtitle">
-                Upload first name, last name, email, and role. Usernames and one-time temporary passwords are generated automatically.
-              </p>
-              <button className="btn btn-ghost" type="button" onClick={downloadCsvTemplate}>
-                Download CSV template
-              </button>
 
-              <form className="form-grid" onSubmit={submitCsv}>
+          {activeTab === 'csv' && (
+            <article className="panel csv-import-panel">
+              <div className="csv-import-head">
+                <div>
+                  <h2>Bulk User Import (CSV)</h2>
+                  <p className="subtitle">
+                    Upload first name, last name, email, and role. Usernames and one-time temporary passwords are generated automatically.
+                  </p>
+                </div>
+                <button className="csv-template-link" type="button" onClick={downloadCsvTemplate}>
+                  Download CSV template
+                </button>
+              </div>
+
+              <form className="form-grid csv-import-form" onSubmit={submitCsv}>
                 <label className="field">
                   CSV File
                   <input type="file" accept=".csv" onChange={handleCsvFileChange} required />
                 </label>
 
-                <p className="info-text">
-                  <strong>CSV Format Example:</strong>
-                  <br />
-                  first_name,last_name,email,role
-                  <br />
-                  Juan,Dela Cruz,juan@gmail.com,parent
-                  <br />
-                  Maria,Santos,maria@gmail.com,teacher
-                </p>
+                <div className="csv-format-preview" aria-label="CSV format example">
+                  <span>CSV Format Example</span>
+                  <code>first_name,last_name,email,role<br />Juan,Dela Cruz,juan@gmail.com,parent<br />Maria,Santos,maria@gmail.com,teacher</code>
+                </div>
 
-                <button className="btn btn-primary" type="submit" disabled={csvUploading}>
-                  {csvUploading ? 'Uploading...' : 'Upload CSV'}
-                </button>
+                <div className="csv-upload-action">
+                  <button className="btn btn-primary" type="submit" disabled={csvUploading}>
+                    {csvUploading ? 'Uploading...' : 'Upload CSV'}
+                  </button>
+                </div>
               </form>
 
               {csvUploadSummary && (

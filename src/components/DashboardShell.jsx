@@ -1,4 +1,4 @@
-function DashboardShell({ title, subtitle, role, username, onLogout, children }) {
+function DashboardShell({ title, subtitle, role, username, onLogout, headerActions, children }) {
   return (
     <div className="dashboard-shell">
       <header className="app-header">
@@ -16,7 +16,7 @@ function DashboardShell({ title, subtitle, role, username, onLogout, children })
           <p>
             Signed in as <strong>{username}</strong>
           </p>
-          {/* ONLY show logout in header if the user is an Admin */}
+          {headerActions}
           {role === 'Admin' && (
             <button className="btn btn-secondary" type="button" onClick={onLogout}>
               Log out

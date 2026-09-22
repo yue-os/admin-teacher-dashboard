@@ -1521,6 +1521,12 @@ const createAnnouncement = async (event) => {
       role={session.role}
       username={session.username}
       onLogout={onLogout}
+      headerActions={
+        <div className="teacher-header-actions">
+          <button className={activeTab === 'profile' ? 'btn btn-primary' : 'btn btn-secondary'} type="button" onClick={() => setActiveTab('profile')}>My Profile</button>
+          <button className="btn btn-danger" type="button" onClick={onLogout}>Log out</button>
+        </div>
+      }
     >
       {error && <p className="error-text panel" role="alert">{error}</p>}
       {successMessage && <p className="success-text panel" role="status">{successMessage}</p>}
@@ -1529,16 +1535,6 @@ const createAnnouncement = async (event) => {
         <Loading message="Fetching classroom data..." />
       ) : (
         <>
-          {/* Top Right Header Section - Only My Profile button */}
-          <div className="profile-btn-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem', marginBottom: '1rem' }}>
-            <button 
-              className={`btn ${activeTab === 'profile' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setActiveTab('profile')}
-              style={{ padding: '0.5rem 1.5rem', fontWeight: 'bold' }}
-            >
-              My Profile
-            </button>
-          </div>
 
           {/* TOP BAR - GLOBAL CLASS CONTROLS */}
           <header className="panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', padding: '1rem 2rem', gap: '1rem', flexWrap: 'wrap' }}>
@@ -1614,7 +1610,6 @@ const createAnnouncement = async (event) => {
             <article className="panel">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h2>Account Information</h2>
-                <button className="btn btn-danger" onClick={onLogout}>Log out</button>
               </div>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -2005,7 +2000,7 @@ const createAnnouncement = async (event) => {
                       <span className="badge">{classLobbies.filter((lobby) => lobby.joinable).length} joinable</span>
                     </div>
 
-                    <form className="form-grid" onSubmit={hostLobby}>
+                    <form className="form-grid lobby-host-form" onSubmit={hostLobby}>
                       <label className="field">
                         Lobby name
                         <input
@@ -2028,18 +2023,6 @@ const createAnnouncement = async (event) => {
                           <option value="8">8 Players</option>
                         </select>
                       </label>
-
-                      <div className="field-row">
-                        <label className="field">
-                          Server IP
-                          <input value={generatedLobbyEndpoint.ip || 'Generated after hosting'} readOnly />
-                        </label>
-
-                        <label className="field">
-                          Port
-                          <input value={generatedLobbyEndpoint.port || 'Generated after hosting'} readOnly />
-                        </label>
-                      </div>
 
                       <label className="field">
                         Total required slots
