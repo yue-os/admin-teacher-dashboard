@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import heroImage from '../assets/hero.png'
 import './HomePage.css'
@@ -62,6 +62,29 @@ function HomePage() {
     setOpenCapability((current) => current === capabilityId ? null : capabilityId)
   }
 
+  const downloadBtnRef = useRef(null)
+
+  useEffect(() => {
+    const script = document.createElement('script')
+    script.src = 'https://static.itch.io/api.js'
+    script.async = true
+    
+    script.onload = () => {
+      if (window.Itch && downloadBtnRef.current) {
+        window.Itch.attachBuyButton(downloadBtnRef.current, {
+          user: "grahambel",
+          game: "batangaware"
+        });
+      }
+    }
+    
+    document.body.appendChild(script)
+
+    return () => {
+      document.body.removeChild(script)
+    }
+  }, [])
+
   return (
     <div className="home-layout">
       <nav className="home-nav">
@@ -102,20 +125,18 @@ function HomePage() {
             <p className="hero-subtitle">
               BatangAware is a multiplayer social deduction game where students collaborate, trade, and complete missions while uncovering hidden roles in a playful learning world.
             </p>
-            <div className="hero-actions">
-              <a
-                href="https://grahambel.itch.io/batangaware"
-                target="_blank"
-                rel="noreferrer"
-                className="btn btn-primary btn-large glow-cta"
-              >
-                Download Game
-              </a>
-              <a href="#roles" className="btn btn-secondary btn-large">
-                Explore roles
-              </a>
+              <div className="hero-actions">
+                <button
+                  ref={downloadBtnRef}
+                  className="btn btn-primary btn-large glow-cta"
+                >
+                  Download Game
+                </button>
+                <Link to="/login" className="btn btn-secondary btn-large">
+                  Sign in
+                </Link>
+              </div>         
             </div>
-          </div>
         </div>
       </main>
 
