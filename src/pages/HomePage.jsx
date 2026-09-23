@@ -1,200 +1,281 @@
-import { useState, useRef, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import heroImage from '../assets/hero.png'
+import RoleSection from '../components/RoleSection'
+import { AdminVisual, TeacherVisual, ParentVisual } from '../components/RoleVisuals'
 import './HomePage.css'
+
+const HomeHeroCanvas = lazy(() => import('../components/HomeHeroCanvas'))
 
 const ROLE_DATA = [
   {
     id: 'admin',
-    label: '01',
-    title: 'Admin command center',
-    description: 'Keep every class, account, and game session moving in the same direction.',
-    icon: '✦',
-    accent: 'cyan',
-    status: 'Full oversight',
-    capabilities: [
-      { title: 'User management', description: 'Create, organize, and support accounts for students, teachers, and parents.' },
-      { title: 'Real-time analytics', description: 'Monitor participation and game activity across the whole platform.' },
-      { title: 'Class orchestration', description: 'Coordinate classes, groups, and educational leaders from one place.' },
-      { title: 'Platform settings', description: 'Shape permissions, game rules, and shared settings for the whole community.' }
+    title: 'Command Center for Admins',
+    subtitle: 'Full oversight of the BatangAware ecosystem.',
+    visual: AdminVisual,
+    features: [
+      { icon: '👥', title: 'User Management', description: 'Create and manage accounts for students, teachers, and parents.' },
+      { icon: '📊', title: 'Real-time Analytics', description: 'Monitor platform-wide engagement and game metrics.' },
+      { icon: '🏫', title: 'Class Orchestration', description: 'Organize student groups and assign educational leaders.' }
     ]
   },
   {
     id: 'teacher',
-    label: '02',
-    title: 'Teacher command center',
-    description: 'Turn a lesson into a shared mission with simple tools for play, progress, and connection.',
-    icon: '◒',
-    accent: 'emerald',
-    status: 'Ready to teach',
-    capabilities: [
-      { title: 'Host game lobbies', description: 'Launch and manage social deduction sessions with your class.' },
-      { title: 'Track student progress', description: 'Review performance and social interaction patterns over time.' },
-      { title: 'Class communication', description: 'Keep students and guardians connected around every lesson.' },
-      { title: 'Quiz Creator', description: 'Build and customize game quizzes that turn your curriculum into playable missions.' }
-    ]
+    title: 'Empowerment for Teachers',
+    subtitle: 'Tools to guide learning through play.',
+    visual: TeacherVisual,
+    features: [
+      { icon: '🎮', title: 'Host Game Lobbies', description: 'Launch and manage social deduction sessions effortlessly.' },
+      { icon: '📈', title: 'Progress Tracking', description: 'Analyze student performance and social interaction patterns.' },
+      { icon: '💬', title: 'Class Communication', description: 'Stay connected with students and their guardians.' }
+    ],
+    reverse: true
   },
   {
     id: 'parent',
-    label: '03',
-    title: 'Parent command center',
-    description: 'See the bigger picture of your child\'s learning, confidence, and collaboration.',
-    icon: '◌',
-    accent: 'orange',
-    status: 'Stay connected',
-    capabilities: [
-      { title: 'Child monitoring', description: 'View activity summaries and game-based learning outcomes.' },
-      { title: 'Direct messaging', description: 'Stay in a secure communication channel with classroom teachers.' },
-      { title: 'Achievement records', description: 'Celebrate milestones and follow your child\'s social growth.' },
-      { title: 'Learning updates', description: 'Keep up with new missions, classroom moments, and next steps.' }
+    title: 'Insights for Parents',
+    subtitle: 'Stay involved in your child\'s development.',
+    visual: ParentVisual,
+    features: [
+      { icon: '🧿', title: 'Child Monitoring', description: 'View activity summaries and game-based learning outcomes.' },
+      { icon: '📧', title: 'Direct Messaging', description: 'Secure communication channel with classroom teachers.' },
+      { icon: '🏆', title: 'Achievement Records', description: 'Celebrate your child\'s milestones and social growth.' }
     ]
   }
 ]
 
 function HomePage() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const [openCapability, setOpenCapability] = useState(null)
-
-  const closeMenu = () => setIsMenuOpen(false)
-
-  const toggleCapability = (roleId, capabilityIndex) => {
-    const capabilityId = `${roleId}-${capabilityIndex}`
-    setOpenCapability((current) => current === capabilityId ? null : capabilityId)
-  }
-
-  const downloadBtnRef = useRef(null)
+  const sectionRefs = useRef([])
+  const bgRef = useRef(null)
+  const keyboardNavLockRef = useRef(false)
+  const keyboardNavTimerRef = useRef(null)
+  const keyboardSectionIndexRef = useRef(0)
 
   useEffect(() => {
-    const script = document.createElement('script')
-    script.src = 'https://static.itch.io/api.js'
-    script.async = true
+    if (window.innerWidth <= 768) return;
+    let rafId = null
+    let cachedMaxScroll = 1;
+
+    // Cache the height ONLY when the window resizes, not every frame
+    const updateMaxScroll = () => {
+      cachedMaxScroll = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1)
+    };
     
-    script.onload = () => {
-      if (window.Itch && downloadBtnRef.current) {
-        window.Itch.attachBuyButton(downloadBtnRef.current, {
-          user: "grahambel",
-          game: "batangaware"
-        });
-      }
+    updateMaxScroll();
+    window.addEventListener('resize', updateMaxScroll, { passive: true });
+
+    const handleScroll = () => {
+      if (!bgRef.current) return
+      if (rafId !== null) return
+
+      rafId = window.requestAnimationFrame(() => {
+        // Use the cached value instead of querying the DOM
+        const scrollPct = Math.min(Math.max(window.scrollY / cachedMaxScroll, 0), 1)
+        bgRef.current.style.setProperty('--scroll-progress', scrollPct)
+
+        const perspective = 1000 - scrollPct * 300
+        bgRef.current.style.perspective = `${perspective}px`
+        rafId = null
+      })
     }
-    
-    document.body.appendChild(script)
+
+    handleScroll()
+    window.addEventListener('scroll', handleScroll, { passive: true })
 
     return () => {
-      document.body.removeChild(script)
+      window.removeEventListener('scroll', handleScroll)
+      window.removeEventListener('resize', updateMaxScroll)
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible')
+          }
+        })
+      },
+      { threshold: 0.15 }
+    )
+
+    sectionRefs.current.forEach((ref) => {
+      if (ref) observer.observe(ref)
+    })
+
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const topOffset = 96
+    const sectionSelectors = ['.home-hero', '#admin', '#teacher', '#parent']
+
+    const isTypingTarget = (target) => {
+      if (!target) return false
+      const tagName = target.tagName
+      return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || target.isContentEditable
+    }
+
+    const getSectionPositions = () =>
+      sectionSelectors
+        .map((selector) => document.querySelector(selector))
+        .filter(Boolean)
+        .map((element) => element.offsetTop)
+
+    const getClosestSectionIndex = (positions) => {
+      const currentPosition = window.scrollY + topOffset
+      let currentIndex = 0
+      let smallestDistance = Number.POSITIVE_INFINITY
+
+      for (let index = 0; index < positions.length; index += 1) {
+        const distance = Math.abs(currentPosition - positions[index])
+        if (distance < smallestDistance) {
+          smallestDistance = distance
+          currentIndex = index
+        }
+      }
+
+      return currentIndex
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+      if (event.defaultPrevented) return
+      if (isTypingTarget(document.activeElement)) return
+      if (event.repeat) {
+        event.preventDefault()
+        return
+      }
+      if (keyboardNavLockRef.current) {
+        event.preventDefault()
+        return
+      }
+
+      const positions = getSectionPositions()
+      if (!positions.length) return
+
+      keyboardSectionIndexRef.current = getClosestSectionIndex(positions)
+      const direction = event.key === 'ArrowDown' ? 1 : -1
+      const targetIndex = keyboardSectionIndexRef.current + direction
+
+      if (targetIndex < 0 || targetIndex >= positions.length) return
+
+      event.preventDefault()
+      keyboardNavLockRef.current = true
+      keyboardSectionIndexRef.current = targetIndex
+      window.scrollTo({
+        top: Math.max(positions[targetIndex] - topOffset, 0),
+        behavior: 'smooth',
+      })
+
+      if (keyboardNavTimerRef.current) {
+        window.clearTimeout(keyboardNavTimerRef.current)
+      }
+
+      keyboardNavTimerRef.current = window.setTimeout(() => {
+        keyboardNavLockRef.current = false
+        keyboardNavTimerRef.current = null
+      }, 420)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      if (keyboardNavTimerRef.current) {
+        window.clearTimeout(keyboardNavTimerRef.current)
+      }
+      keyboardNavLockRef.current = false
+      keyboardSectionIndexRef.current = 0
     }
   }, [])
 
   return (
     <div className="home-layout">
+      <div className="immersive-bg" ref={bgRef}>
+        <div className="mesh-gradient-base" />
+        <div className="fluid-orbs">
+          <div className="orb o1" />
+          <div className="orb o2" />
+          <div className="orb o3" />
+        </div>
+        <div className="perspective-grid" />
+      </div>
+
+      <Suspense fallback={<div className="home-canvas-bg hero-canvas-fallback" />}>
+        <HomeHeroCanvas className="home-canvas-bg" />
+      </Suspense>
+
+      <div className="retro-grid" aria-hidden="true" />
+      <div className="floating-particles" aria-hidden="true">
+        {[...Array(20)].map((_, i) => (
+          <span key={i} style={{ '--index': i }} />
+        ))}
+      </div>
+
       <nav className="home-nav">
         <div className="nav-container">
           <Link to="/" className="nav-brand">
             <img src="/batangaware-logo.png" alt="BatangAware" className="nav-logo" />
             <span className="nav-brand-copy">
-              <span className="nav-brand-title">BatangAware</span>
+              <span className="nav-brand-title neon-text">BatangAware</span>
+              {/* <span className="nav-brand-subtitle">Multiplayer card game</span> */}
             </span>
           </Link>
-          <button
-            type="button"
-            className="nav-menu-toggle"
-            aria-expanded={isMenuOpen}
-            aria-controls="home-navigation"
-            aria-label={isMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            onClick={() => setIsMenuOpen((open) => !open)}
-          >
-            <span />
-            <span />
-            <span />
-          </button>
-          <div id="home-navigation" className={`nav-links ${isMenuOpen ? 'is-open' : ''}`}>
-            <a href="#roles" className="nav-link" onClick={closeMenu}>Roles</a>
+          <div className="nav-links">
+            <a href="#admin" className="nav-link">Admin</a>
+            <a href="#teacher" className="nav-link">Teacher</a>
+            <a href="#parent" className="nav-link">Parent</a>
             <Link to="/login" className="btn btn-secondary btn-small">Sign in</Link>
           </div>
         </div>
       </nav>
 
       <main className="home-hero">
-        <div className="hero-content">
-          <div className="hero-visual">
-            <img src={heroImage} alt="BatangAware game" className="hero-image" />
-          </div>
+        <div className="hero-content animate-in">
           <div className="hero-copy">
             <p className="eyebrow">BatangAware</p>
-            <h1 className="hero-title">Education meets <span>social deduction.</span></h1>
+            <h1 className="hero-title">Education meets social deduction.</h1>
             <p className="hero-subtitle">
               BatangAware is a multiplayer social deduction game where students collaborate, trade, and complete missions while uncovering hidden roles in a playful learning world.
             </p>
-              <div className="hero-actions">
-                <button
-                  ref={downloadBtnRef}
-                  className="btn btn-primary btn-large glow-cta"
-                >
-                  Download Game
-                </button>
-                <Link to="/login" className="btn btn-secondary btn-large">
-                  Sign in
-                </Link>
-              </div>         
+            <div className="hero-actions">
+              <a
+                href="https://grahambel.itch.io/batangaware"
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-primary btn-large glow-cta"
+              >
+                Download Game
+              </a>
+              <Link to="/login" className="btn btn-secondary btn-large">
+                Sign in
+              </Link>
             </div>
+          </div>
         </div>
       </main>
 
       <section className="home-roles" id="roles">
-        <div className="section-heading">
-          <p className="eyebrow">One platform, three perspectives</p>
-          <h2>Everyone has a role in the story.</h2>
+        <div className="background-decor">
+          <div className="data-stream s1" />
+          <div className="data-stream s2" />
         </div>
-        <div className="role-feed">
-          {ROLE_DATA.map((role) => (
-            <article key={role.id} id={role.id} className={`role-card role-card-${role.accent}`}>
-              <div className="role-sidebar">
-                <div className="role-card-top">
-                  <span className="role-number">{role.label}</span>
-                  <span className="role-icon" aria-hidden="true">{role.icon}</span>
-                </div>
-                <span className="role-status">{role.status}</span>
-                <h3>{role.title}</h3>
-                <p>{role.description}</p>
-              </div>
-              <div className="role-body">
-                <p className="capability-label">Capabilities</p>
-                <div className="capability-list">
-                  {role.capabilities.map((capability, index) => {
-                    const capabilityId = `${role.id}-${index}`
-                    const isOpen = openCapability === capabilityId
-
-                    return (
-                      <div key={capability.title} className={`capability-item ${isOpen ? 'is-open' : ''}`}>
-                        <button
-                          type="button"
-                          className="capability-trigger"
-                          aria-expanded={isOpen}
-                          aria-controls={`${capabilityId}-description`}
-                          onClick={() => toggleCapability(role.id, index)}
-                        >
-                          <span>{capability.title}</span>
-                          <span className="capability-chevron" aria-hidden="true">⌄</span>
-                        </button>
-                        <div className="capability-panel" id={`${capabilityId}-description`}>
-                          <p>{capability.description}</p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
+        {ROLE_DATA.map((role, idx) => (
+          <div 
+            key={role.id} 
+            ref={el => sectionRefs.current[idx] = el} 
+            className="reveal-section"
+          >
+            <RoleSection {...role} />
+          </div>
+        ))}
       </section>
 
       <footer className="home-footer">
         <p>&copy; 2026 BatangAware. All rights reserved.</p>
-        <nav className="footer-links" aria-label="Legal">
-          <a href="/privacy">Privacy</a>
-          <a href="/terms">Terms</a>
-        </nav>
       </footer>
     </div>
   )
