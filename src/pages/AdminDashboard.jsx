@@ -10,6 +10,7 @@ const USER_TEMPLATE = {
   username: '',
   email: '',
   role: 'Student',
+  password: '',
 }
 
 function AdminDashboard({ session, onLogout }) {
@@ -291,8 +292,13 @@ function AdminDashboard({ session, onLogout }) {
       const payload = {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
+        username: form.username.trim(),
         email: form.email.trim(),
         role: form.role,
+      }
+
+      if (!editingUserId || (form.password && form.password.trim() !== '')) {
+        payload.password = form.password.trim()
       }
 
       if (!payload.first_name || !payload.last_name || !payload.email || !payload.role) {
@@ -1006,6 +1012,17 @@ function AdminDashboard({ session, onLogout }) {
                       </label>
                     </div>
 
+                    <div className="field-row">
+                      <label className="field">
+                        Username
+                        <input name="username" value={form.username} onChange={onFieldChange} required />
+                      </label>
+                      <label className="field">
+                        Password
+                        <input name="password" type="password" value={form.password || ''} onChange={onFieldChange} required />
+                      </label>
+                    </div>
+
                     <div className="user-form-footer">
                       <span className="form-note">
                         Temporary credentials are generated after creation.
@@ -1070,6 +1087,24 @@ function AdminDashboard({ session, onLogout }) {
                           <input name="last_name" value={form.last_name} onChange={onFieldChange} required />
                         </label>
                       </div>
+
+                      <div className="field-row">
+                        <label className="field">
+                          Username
+                          <input name="username" value={form.username} onChange={onFieldChange} required />
+                        </label>
+                        <label className="field">
+                          Password
+                          <input 
+                            name="password" 
+                            type="password" 
+                            value={form.password || ''} 
+                            onChange={onFieldChange} 
+                            placeholder="Leave blank to keep current" 
+                          />
+                        </label>
+                      </div>
+                      
                       <div className="field-row">
                         <label className="field">
                           Email
