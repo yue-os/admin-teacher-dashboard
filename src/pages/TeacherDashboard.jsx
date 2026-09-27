@@ -118,35 +118,6 @@ const normalizeQuizQuestion = (question = {}, index = 0) => ({
   required: question.required ?? true,
 })
 
-const apiEndpoint = (() => {
-  try {
-    const apiUrl = new URL(import.meta.env.VITE_API_BASE_URL || window.location.origin)
-    return {
-      ip: apiUrl.hostname,
-      port: apiUrl.port || (apiUrl.protocol === 'https:' ? '443' : '80'),
-    }
-  } catch {
-    return { ip: '', port: '' }
-  }
-})()
-
-const getGeneratedLobbyPort = (lobbies) => {
-  const basePort = Number(apiEndpoint.port) || 5000
-  const usedPorts = new Set(
-    lobbies
-      .filter((lobby) => !apiEndpoint.ip || String(lobby.ip) === String(apiEndpoint.ip))
-      .map((lobby) => Number(lobby.port))
-      .filter((port) => Number.isInteger(port) && port > 0),
-  )
-
-  let nextPort = basePort
-  while (usedPorts.has(nextPort)) {
-    nextPort += 1
-  }
-
-  return nextPort
-}
-
 function TeacherDashboard({ session, onLogout }) {
   const location = useLocation()
   const readStorageKey = `teacher-chat-read:${session.userId || session.username || 'current'}`
@@ -1344,13 +1315,6 @@ const createAnnouncement = async (event) => {
     return lobbies.filter((lobby) => String(lobby.classId) === String(selectedClassId))
   }, [lobbies, selectedClassId])
 
-  const generatedLobbyEndpoint = useMemo(() => {
-    return {
-      ip: apiEndpoint.ip,
-      port: getGeneratedLobbyPort(lobbies),
-    }
-  }, [lobbies])
-
   const normalizeLobby = useCallback((lobby, serverStatus = null) => {
     const status = serverStatus?.status || (serverStatus?.online ? 'Not yet started' : 'Created')
     const currentPlayers = serverStatus?.current_players ?? serverStatus?.count ?? lobby.player_count ?? 0
@@ -1436,11 +1400,6 @@ const createAnnouncement = async (event) => {
 
     const selectedPlayers = Number(lobbyForm.requiredPlayers)
     const requiredPlayers = selectedPlayers
-    const lobbyEndpoint = {
-      ip: generatedLobbyEndpoint.ip,
-      port: generatedLobbyEndpoint.port,
-    }
-
     try {
       setSavingLobby(true)
       setError('')
@@ -1452,8 +1411,6 @@ const createAnnouncement = async (event) => {
         body: {
           class_public_id: classPublicId,
           name: lobbyForm.name.trim() || `${currentClass?.name || 'Class'} Lobby`,
-          ip: lobbyEndpoint.ip,
-          port: lobbyEndpoint.port,
           player_count: requiredPlayers,
           required_players: requiredPlayers,
         },
@@ -1467,7 +1424,7 @@ const createAnnouncement = async (event) => {
       ])
       setLobbyForm({ name: '', requiredPlayers: 4 })
       setSuccessMessage(
-        `${result.message || 'Lobby hosted successfully.'} Endpoint: ${nextLobby.ip}:${nextLobby.port}. Total slots: ${requiredPlayers}. The first joiner will host the game from the server side.`,
+        `${result.message || 'Lobby hosted successfully.'} Lobby ID: ${nextLobby.publicId}. Total slots: ${requiredPlayers}. Students join through the game lobby list.`,
       )
       setTimeout(() => setSuccessMessage(''), 3000)
       await fetchLobbies()
@@ -2033,8 +1990,11 @@ const createAnnouncement = async (event) => {
                         <div className="success-text panel" style={{ marginTop: '1rem', background: 'rgba(164, 198, 57, 0.1)', borderColor: 'var(--success)' }}>
                           <p style={{ margin: 0 }}><strong>Lobby Active:</strong> {lastHostedLobby.name}{lastHostedLobby.teacherLobby ? ' (Server-side)' : ''}</p>
                           <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            Join Code: <code style={{ userSelect: 'all', fontSize: '1.2rem', padding: '0.2rem 0.5rem', background: '#fff', border: '1px solid #ccc' }}>{lastHostedLobby.ip}:{lastHostedLobby.port}</code>
-                            <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => copyLobbyCode(`${lastHostedLobby.ip}:${lastHostedLobby.port}`)}>Copy</button>
+                            Lobby ID: <code style={{ userSelect: 'all', fontSize: '1.2rem', padding: '0.2rem 0.5rem', background: '#fff', border: '1px solid #ccc' }}>{lastHostedLobby.publicId}</code>
+                            <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => copyLobbyCode(lastHostedLobby.publicId)}>Copy</button>
+                          </p>
+                          <p style={{ margin: 0, fontSize: '0.85rem', wordBreak: 'break-all' }}>
+                            WebSocket: <code>wss://multiplayer-game-backend-production-27bf.up.railway.app/ws/lobby/{lastHostedLobby.publicId}</code>
                           </p>
                         </div>
                       )}
@@ -2083,8 +2043,8 @@ const createAnnouncement = async (event) => {
                             <div className="lobby-details" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: 'var(--text-light)', marginTop: '1rem' }}>
                               <span><strong>Players:</strong> {lobby.currentPlayers} / {lobby.requiredPlayers}</span>
                               <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                <strong>Code:</strong> 
-                                <code style={{ userSelect: 'all', background: '#f5f5f5', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>{lobby.ip}:{lobby.port}</code>
+                                <strong>Lobby ID:</strong> 
+                                <code style={{ userSelect: 'all', background: '#f5f5f5', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>{lobby.publicId}</code>
                               </span>
                             </div>
                           </div>
