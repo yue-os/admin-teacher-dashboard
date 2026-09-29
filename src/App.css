@@ -3388,3 +3388,134 @@ img, svg, canvas {
     flex: 0 0 auto;
   }
 }
+
+.quiz-csv-import {
+  margin: 0.25rem 0;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  background: linear-gradient(125deg, #f5f9ff 0%, #f8fafc 58%, #ffffff 100%);
+}
+
+.quiz-csv-import-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(340px, 1.1fr);
+  align-items: center;
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+}
+
+.quiz-csv-import-intro {
+  display: grid;
+  justify-items: start;
+  gap: 1rem;
+}
+
+.quiz-csv-import-eyebrow {
+  display: inline-block;
+  margin-bottom: 0.35rem;
+  color: var(--color-primary);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.quiz-csv-import-intro h2 {
+  margin: 0;
+  color: var(--text-h);
+  font-size: clamp(1.1rem, 2vw, 1.35rem);
+  line-height: 1.25;
+}
+
+.quiz-csv-import-intro p,
+.quiz-csv-import-help {
+  margin: 0.45rem 0 0;
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.quiz-csv-import-intro .btn {
+  width: auto;
+}
+
+.quiz-csv-upload-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px dashed var(--accent-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.quiz-csv-file-field {
+  min-width: 0;
+  margin: 0;
+  gap: 0.45rem;
+  font-weight: 650;
+}
+
+.quiz-csv-file-field input[type="file"] {
+  padding: 0.45rem;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 0.82rem;
+}
+
+.quiz-csv-file-field input[type="file"]::file-selector-button {
+  margin-right: 0.65rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  background: var(--accent-bg);
+  color: var(--color-primary);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.quiz-csv-file-hint {
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.quiz-csv-upload-panel > .btn {
+  width: auto;
+  white-space: nowrap;
+}
+
+.quiz-csv-import-help {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.quiz-csv-import-help code {
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  background: #e8eef5;
+  color: var(--text-dark, #1e293b);
+}
+
+.quiz-csv-feedback {
+  margin: 0.75rem 0 0;
+}
+
+@media (max-width: 640px) {
+  .quiz-csv-import-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.1rem;
+  }
+
+  .quiz-csv-upload-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .quiz-csv-import-intro .btn,
+  .quiz-csv-upload-panel > .btn {
+    width: 100%;
+  }
+}

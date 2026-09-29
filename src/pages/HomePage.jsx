@@ -217,7 +217,7 @@ function HomePage() {
       <main className="home-main">
         <section className="home-hero" aria-labelledby="hero-title">
           <div className="hero-copy">
-            <p className="home-eyebrow">BatangAware</p>
+            {/* <p className="home-eyebrow">BatangAware</p> */}
             <h1 id="hero-title">Learn. Play. <span>Stay Aware.</span></h1>
             <p className="hero-subtitle">BatangAware is a multiplayer health-awareness game where students learn, interact, and make decisions while playing together.</p>
             <div className="hero-actions">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
+import ExcelJS from 'exceljs'
 import DashboardShell from '../components/DashboardShell'
 import Loading from '../components/Loading'
 import { apiRequest } from '../lib/api'
@@ -118,6 +119,256 @@ const normalizeQuizQuestion = (question = {}, index = 0) => ({
   required: question.required ?? true,
 })
 
+const normalizeQuizCsvHeader = (value) => {
+  const header = String(value || '')
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+  const aliases = {
+    prompt: 'question',
+    question_text: 'question',
+    question_prompt: 'question',
+    question_type: 'type',
+    correct: 'correct_answer',
+    correctanswer: 'correct_answer',
+    correct_option: 'correct_answer',
+    answer: 'correct_answer',
+    choices: 'options',
+    instruction: 'description',
+    score: 'points',
+  }
+  if (aliases[header]) return aliases[header]
+
+  const numberedOption = header.match(/^(?:option|choice)_?([1-4])$/)
+  if (numberedOption) return `option_${String.fromCharCode(96 + Number(numberedOption[1]))}`
+  return header
+}
+
+const parseQuizCsvRecords = (source) => {
+  const text = String(source || '').replace(/^\uFEFF/, '')
+  const records = []
+  let record = []
+  let field = ''
+  let inQuotes = false
+  let afterQuote = false
+
+  const finishRecord = () => {
+    record.push(field)
+    records.push(record)
+    record = []
+    field = ''
+    afterQuote = false
+  }
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index]
+
+    if (inQuotes) {
+      if (character === '"') {
+        if (text[index + 1] === '"') {
+          field += '"'
+          index += 1
+        } else {
+          inQuotes = false
+          afterQuote = true
+        }
+      } else {
+        field += character
+      }
+      continue
+    }
+
+    if (afterQuote) {
+      if (character === ' ' || character === '\t') continue
+      if (character === ',') {
+        record.push(field)
+        field = ''
+        afterQuote = false
+        continue
+      }
+      if (character === '\n' || character === '\r') {
+        finishRecord()
+        if (character === '\r' && text[index + 1] === '\n') index += 1
+        continue
+      }
+      throw new Error('A quoted field is followed by unexpected text. Check the CSV quotes and commas.')
+    }
+
+    if (character === '"') {
+      if (field.trim() !== '') throw new Error('A quote appears inside an unquoted field. Check the CSV formatting.')
+      field = ''
+      inQuotes = true
+      continue
+    }
+    if (character === ',') {
+      record.push(field)
+      field = ''
+      continue
+    }
+    if (character === '\n' || character === '\r') {
+      finishRecord()
+      if (character === '\r' && text[index + 1] === '\n') index += 1
+      continue
+    }
+    field += character
+  }
+
+  if (inQuotes) throw new Error('The CSV contains an unclosed quoted field. Check the file formatting.')
+  if (field !== '' || record.length > 0 || afterQuote) finishRecord()
+  return records
+}
+
+const parseQuizQuestionsCsv = (source) => {
+  if (!String(source || '').trim()) throw new Error('The selected CSV file is empty.')
+
+  const parsedRecords = parseQuizCsvRecords(source)
+  const nonEmptyRecords = parsedRecords
+    .map((values, index) => ({ values, rowNumber: index + 1 }))
+    .filter(({ values }) => values.some((value) => String(value || '').trim() !== ''))
+
+  if (nonEmptyRecords.length < 2) {
+    throw new Error('The CSV needs a header row and at least one question row.')
+  }
+
+  const headers = nonEmptyRecords[0].values.map(normalizeQuizCsvHeader)
+  const headerIndexes = new Map()
+  headers.forEach((header, index) => {
+    if (!header) return
+    if (headerIndexes.has(header)) throw new Error(`The CSV contains the column "${header}" more than once.`)
+    headerIndexes.set(header, index)
+  })
+
+  const missingHeaders = ['question', 'correct_answer'].filter((header) => !headerIndexes.has(header))
+  if (missingHeaders.length) {
+    throw new Error(`This is not a quiz questions CSV. Add the required column(s): ${missingHeaders.join(', ')}.`)
+  }
+
+  const cell = (row, name) => {
+    const columnIndex = headerIndexes.get(name)
+    return columnIndex === undefined ? '' : String(row[columnIndex] ?? '').trim()
+  }
+  const rowErrors = []
+  const questions = []
+
+  nonEmptyRecords.slice(1).forEach(({ values, rowNumber }) => {
+    const extraValues = values.slice(headers.length).filter((value) => String(value || '').trim() !== '')
+    if (extraValues.length) {
+      rowErrors.push({ rowNumber, message: 'has more values than the header row.' })
+      return
+    }
+
+    const text = cell(values, 'question')
+    if (!text) {
+      rowErrors.push({ rowNumber, message: 'is missing its question text.' })
+      return
+    }
+
+    const rawType = cell(values, 'type').toLowerCase().replace(/[\s/-]+/g, '_')
+    const typeAliases = {
+      '': 'multiple_choice',
+      mc: 'multiple_choice',
+      mcq: 'multiple_choice',
+      multiplechoice: 'multiple_choice',
+      tf: 'true_false',
+      truefalse: 'true_false',
+      short_answer: 'identification',
+      fill_in_the_blank: 'identification',
+    }
+    const type = typeAliases[rawType] || rawType
+    if (!['multiple_choice', 'true_false', 'identification'].includes(type)) {
+      rowErrors.push({ rowNumber, message: `uses unsupported question type "${cell(values, 'type')}".` })
+      return
+    }
+
+    const answerInput = cell(values, 'correct_answer')
+    if (!answerInput) {
+      rowErrors.push({ rowNumber, message: 'is missing the correct answer.' })
+      return
+    }
+
+    let options = []
+    let correctAnswer = answerInput
+    if (type === 'multiple_choice') {
+      const optionColumns = ['option_a', 'option_b', 'option_c', 'option_d']
+      const optionValues = optionColumns.map((header) => cell(values, header))
+      const firstBlankBeforeChoice = optionValues.findIndex((option, index) =>
+        !option && optionValues.slice(index + 1).some(Boolean),
+      )
+      if (firstBlankBeforeChoice >= 0) {
+        rowErrors.push({ rowNumber, message: 'has a missing choice before a later choice. Fill choices from option_a onward.' })
+        return
+      }
+      options = optionValues.filter(Boolean)
+      if (!options.length && cell(values, 'options')) {
+        options = cell(values, 'options').split('|').map((option) => option.trim()).filter(Boolean)
+      }
+      if (options.length < 2) {
+        rowErrors.push({ rowNumber, message: 'needs at least two choices for a multiple-choice question.' })
+        return
+      }
+
+      const letterAnswer = answerInput.match(/^([a-d])$/i)
+      const numericAnswer = answerInput.match(/^\d+$/)
+      const matchedOption = options.findIndex((option) => option.toLowerCase() === answerInput.toLowerCase())
+      let correctIndex = -1
+      if (letterAnswer) {
+        correctIndex = letterAnswer[1].toUpperCase().charCodeAt(0) - 65
+      } else if (numericAnswer) {
+        const numericValue = Number(answerInput)
+        correctIndex = numericValue === 0 ? 0 : numericValue - 1
+      } else {
+        correctIndex = matchedOption
+      }
+      if (correctIndex < 0 || correctIndex >= options.length) {
+        rowErrors.push({ rowNumber, message: 'has an invalid correct answer; use A-D, 1-4, or the exact choice text.' })
+        return
+      }
+      correctAnswer = String(correctIndex)
+    } else if (type === 'true_false') {
+      const normalizedAnswer = answerInput.toLowerCase()
+      if (['true', 't', 'yes', 'y', '1', 'a'].includes(normalizedAnswer)) correctAnswer = 'true'
+      else if (['false', 'f', 'no', 'n', '0', 'b'].includes(normalizedAnswer)) correctAnswer = 'false'
+      else {
+        rowErrors.push({ rowNumber, message: 'must use True or False as the correct answer.' })
+        return
+      }
+      options = ['True', 'False']
+    }
+
+    const pointsInput = cell(values, 'points')
+    const points = pointsInput ? Number(pointsInput) : 1
+    if (!Number.isInteger(points) || points < 1) {
+      rowErrors.push({ rowNumber, message: 'must have a whole-number points value of at least 1.' })
+      return
+    }
+
+    const requiredInput = cell(values, 'required').toLowerCase()
+    let required = true
+    if (['false', 'no', 'n', '0'].includes(requiredInput)) required = false
+    else if (requiredInput && !['true', 'yes', 'y', '1'].includes(requiredInput)) {
+      rowErrors.push({ rowNumber, message: 'must use true/false for the required column.' })
+      return
+    }
+
+    questions.push({
+      type,
+      text,
+      description: cell(values, 'description'),
+      options,
+      correct_answer: correctAnswer,
+      points,
+      required,
+    })
+  })
+
+  if (rowErrors.length) return { questions: [], errors: rowErrors }
+  if (!questions.length) throw new Error('The CSV does not contain any usable quiz questions.')
+  return { questions, errors: [] }
+}
+
 function TeacherDashboard({ session, onLogout }) {
   const location = useLocation()
   const readStorageKey = `teacher-chat-read:${session.userId || session.username || 'current'}`
@@ -156,11 +407,16 @@ function TeacherDashboard({ session, onLogout }) {
   const [savingDraft, setSavingDraft] = useState(false)
   const [autoSavingDraft, setAutoSavingDraft] = useState(false)
   const [quizQuestions, setQuizQuestions] = useState([])
+  const [quizCsvFile, setQuizCsvFile] = useState(null)
+  const [importingQuizCsv, setImportingQuizCsv] = useState(false)
+  const [quizCsvError, setQuizCsvError] = useState('')
+  const [quizCsvMessage, setQuizCsvMessage] = useState('')
   const [storedQuizVisibility, setStoredQuizVisibility] = useState(() => readStoredJson(QUIZ_VISIBILITY_STORAGE_KEY))
   const [quizStatusNow, setQuizStatusNow] = useState(() => Date.now())
   const [selectedResponseQuiz, setSelectedResponseQuiz] = useState(null)
 
   const chatEndRef = useRef(null)
+  const quizCsvInputRef = useRef(null)
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -811,6 +1067,120 @@ const createAnnouncement = async (event) => {
     }
   }
 
+  const handleQuizCsvFileChange = (event) => {
+    setQuizCsvFile(event.target.files?.[0] || null)
+    setQuizCsvError('')
+    setQuizCsvMessage('')
+  }
+
+  const downloadQuizXlsxTemplate = async () => {
+    const rows = [
+      { question: 'Which habit helps prevent flu?', type: 'Multiple Choice', option_a: 'Wash hands regularly', option_b: 'Share drinks', option_c: 'Skip meals', option_d: 'Ignore symptoms', correct_answer: 'A', points: 1, description: 'Choose the healthiest answer.', required: 'true' },
+      { question: 'Does handwashing help reduce the spread of illness?', type: 'True/False', option_a: '', option_b: '', option_c: '', option_d: '', correct_answer: 'True', points: 1, description: '', required: 'true' },
+      { question: 'Name one way to help prevent the spread of flu.', type: 'Identification', option_a: '', option_b: '', option_c: '', option_d: '', correct_answer: 'Wash hands regularly', points: 2, description: '', required: 'true' },
+    ]
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet('Quiz Questions')
+    worksheet.columns = [
+      { header: 'question', key: 'question', width: 52 },
+      { header: 'type', key: 'type', width: 22 },
+      { header: 'option_a', key: 'option_a', width: 28 },
+      { header: 'option_b', key: 'option_b', width: 28 },
+      { header: 'option_c', key: 'option_c', width: 28 },
+      { header: 'option_d', key: 'option_d', width: 28 },
+      { header: 'correct_answer', key: 'correct_answer', width: 24 },
+      { header: 'points', key: 'points', width: 12 },
+      { header: 'description', key: 'description', width: 40 },
+      { header: 'required', key: 'required', width: 12 },
+    ]
+    worksheet.addRows(rows)
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }]
+    worksheet.autoFilter = 'A1:J4'
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } }
+    worksheet.dataValidations.add('B2:B1048576', {
+      type: 'list',
+      allowBlank: false,
+      formulae: ['"Multiple Choice,True/False,Identification"'],
+      showErrorMessage: true,
+      errorTitle: 'Choose a question type',
+      error: 'Select Multiple Choice, True/False, or Identification.',
+    })
+    const fileContents = await workbook.xlsx.writeBuffer()
+    const blob = new Blob([fileContents], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'quiz-questions-template.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const importQuizQuestionsCsv = async () => {
+    setQuizCsvError('')
+    setQuizCsvMessage('')
+    if (!quizCsvFile) {
+      setQuizCsvError('Choose a CSV file to import.')
+      return
+    }
+    const fileName = quizCsvFile.name.toLowerCase()
+    const isCsvFile = fileName.endsWith('.csv')
+    const isXlsxFile = fileName.endsWith('.xlsx')
+    if (!isCsvFile && !isXlsxFile) {
+      setQuizCsvError('Unsupported file type. Choose a .csv or .xlsx quiz file and try again.')
+      return
+    }
+    if (quizCsvFile.size === 0) {
+      setQuizCsvError('The selected file is empty.')
+      return
+    }
+
+    setImportingQuizCsv(true)
+    try {
+      let source
+      if (isCsvFile) {
+        source = await quizCsvFile.text()
+      } else {
+        const workbook = new ExcelJS.Workbook()
+        await workbook.xlsx.load(await quizCsvFile.arrayBuffer())
+        const worksheet = workbook.worksheets.find((sheet) => sheet.actualRowCount > 0)
+        if (!worksheet) throw new Error('The Excel workbook is empty. Add a header row and at least one question row.')
+        const records = []
+        const columnCount = worksheet.actualColumnCount
+        worksheet.eachRow({ includeEmpty: false }, (row) => {
+          records.push(Array.from({ length: columnCount }, (_, index) => row.getCell(index + 1).text || ''))
+        })
+        source = records
+          .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
+          .join('\r\n')
+      }
+      const parsed = parseQuizQuestionsCsv(source)
+      if (parsed.errors.length) {
+        const details = parsed.errors.slice(0, 6).map(({ rowNumber, message }) => `Row ${rowNumber}: ${message}`)
+        const remainingCount = parsed.errors.length - details.length
+        const more = remainingCount > 0 ? ` And ${remainingCount} more row error(s).` : ''
+        setQuizCsvError(`Nothing was imported. ${details.join(' ')}${more}`)
+        return
+      }
+
+      const importedQuestions = parsed.questions.map((question) => ({
+        ...createBlankQuestion(),
+        ...question,
+      }))
+      setQuizQuestions((current) => [...current, ...importedQuestions])
+      setActiveQuestionId(importedQuestions[0].id)
+      setQuizCsvMessage(`Added ${importedQuestions.length} question${importedQuestions.length === 1 ? '' : 's'} to this quiz. Review them, then publish or save a draft.`)
+      setQuizCsvFile(null)
+      if (quizCsvInputRef.current) quizCsvInputRef.current.value = ''
+    } catch (importError) {
+      setQuizCsvError(importError.message || 'The file could not be read. Check that it uses the provided quiz template.')
+    } finally {
+      setImportingQuizCsv(false)
+    }
+  }
+
   const onQuizChange = (event) => {
     const { name, type, checked, value } = event.target
     setQuizForm((current) => ({ ...current, [name]: type === 'checkbox' ? checked : value }))
@@ -928,6 +1298,10 @@ const createAnnouncement = async (event) => {
     setQuizForm(blankQuizForm)
     setQuizQuestions([])
     setActiveQuestionId(null)
+    setQuizCsvFile(null)
+    setQuizCsvError('')
+    setQuizCsvMessage('')
+    if (quizCsvInputRef.current) quizCsvInputRef.current.value = ''
   }
 
   const buildQuizPayload = (status) => ({
@@ -2134,6 +2508,38 @@ const createAnnouncement = async (event) => {
                           <input className="quiz-title-input" name="title" value={quizForm.title} onChange={onQuizChange} placeholder="Untitled quiz" required />
                           <textarea name="description" value={quizForm.description} onChange={onQuizChange} placeholder="Quiz description" rows={3} />
                         </div>
+
+                        <section className="quiz-csv-import" aria-labelledby="quiz-csv-import-title">
+                          <div className="quiz-csv-import-layout">
+                            <div className="quiz-csv-import-intro">
+                              <div>
+                                <span className="quiz-csv-import-eyebrow">SAVE TIME</span>
+                                <h2 id="quiz-csv-import-title">Import questions from a spreadsheet</h2>
+                                <p>Add a prepared set of questions to this quiz in one step.</p>
+                              </div>
+                              <button type="button" className="btn btn-secondary btn-small" onClick={downloadQuizXlsxTemplate}>
+                                Download XLSX template
+                              </button>
+                            </div>
+                            <div className="quiz-csv-upload-panel">
+                              <label className="field quiz-csv-file-field">
+                                <span>Choose a CSV or Excel file</span>
+                                <input ref={quizCsvInputRef} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleQuizCsvFileChange} />
+                                <span className="quiz-csv-file-hint">
+                                  {quizCsvFile ? `${quizCsvFile.name} is ready to import` : 'CSV or XLSX · one question per row'}
+                                </span>
+                              </label>
+                              <button type="button" className="btn btn-primary" onClick={importQuizQuestionsCsv} disabled={!quizCsvFile || importingQuizCsv}>
+                                {importingQuizCsv ? 'Importing...' : 'Import Questions'}
+                              </button>
+                            </div>
+                          </div>
+                          <p className="quiz-csv-import-help">
+                            Required columns: <code>question</code> and <code>correct_answer</code>. Multiple choice rows also need at least two choices. Correct answers can be A-D, 1-4, or the exact choice text. Use the XLSX template to choose a question type from its dropdown.
+                          </p>
+                          {quizCsvError && <p className="error-text quiz-csv-feedback" role="alert">{quizCsvError}</p>}
+                          {quizCsvMessage && <p className="success-text quiz-csv-feedback" role="status">{quizCsvMessage}</p>}
+                        </section>
 
                         <div className="quiz-builder-layout">
                           <div className="quiz-question-stack">
