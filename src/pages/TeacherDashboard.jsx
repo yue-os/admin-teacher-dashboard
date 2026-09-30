@@ -2365,11 +2365,11 @@ const createAnnouncement = async (event) => {
                           <p style={{ margin: 0 }}><strong>Lobby Active:</strong> {lastHostedLobby.name}{lastHostedLobby.teacherLobby ? ' (Server-side)' : ''}</p>
                           <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             Lobby ID: <code style={{ userSelect: 'all', fontSize: '1.2rem', padding: '0.2rem 0.5rem', background: '#fff', border: '1px solid #ccc' }}>{lastHostedLobby.publicId}</code>
-                            <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => copyLobbyCode(lastHostedLobby.publicId)}>Copy</button>
+                            {/* <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => copyLobbyCode(lastHostedLobby.publicId)}>Copy</button> */}
                           </p>
-                          <p style={{ margin: 0, fontSize: '0.85rem', wordBreak: 'break-all' }}>
+                          {/* <p style={{ margin: 0, fontSize: '0.85rem', wordBreak: 'break-all' }}>
                             WebSocket: <code>wss://multiplayer-game-backend-production-27bf.up.railway.app/ws/lobby/{lastHostedLobby.publicId}</code>
-                          </p>
+                          </p> */}
                         </div>
                       )}
                       
@@ -2568,16 +2568,63 @@ const createAnnouncement = async (event) => {
 
                                   {q.type === 'multiple_choice' && (
                                     <div className="options-area">
-                                      {(q.options || []).map((opt, optIndex) => (
-                                        <div key={`${q.id}-${optIndex}`} className="option-row">
-                                          <input type="radio" name={`correct-${q.id}`} checked={String(q.correct_answer) === String(optIndex)} onChange={() => updateQuestion(q.id, 'correct_answer', String(optIndex))} aria-label={`Mark option ${optIndex + 1} correct`} />
-                                          <input value={opt} onChange={(e) => updateOption(q.id, optIndex, e.target.value)} placeholder={`Option ${optIndex + 1}`} required />
-                                          <button type="button" className="icon-btn danger" onClick={() => removeOption(q.id, optIndex)} disabled={(q.options || []).length <= 2}>Remove</button>
-                                        </div>
-                                      ))}
-                                      <div className="option-actions">
+                                      {(q.options || []).map((opt, optIndex) => {
+                                        const isCorrect = String(q.correct_answer) === String(optIndex);
+                                        return (
+                                          <div key={`${q.id}-${optIndex}`} className="option-row" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                                            
+                                            {/* Custom "Mark Correct" Button */}
+                                            <button
+                                              type="button"
+                                              onClick={() => updateQuestion(q.id, 'correct_answer', String(optIndex))}
+                                              title={isCorrect ? "Correct Answer" : "Click to mark as correct"}
+                                              aria-label={isCorrect ? `Option ${optIndex + 1} is the correct answer` : `Mark option ${optIndex + 1} as correct`}
+                                              style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                width: '28px',
+                                                height: '28px',
+                                                borderRadius: '50%',
+                                                border: isCorrect ? '2px solid #10b981' : '2px solid #d1d5db',
+                                                backgroundColor: isCorrect ? '#10b981' : 'transparent',
+                                                color: '#fff',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s ease',
+                                                flexShrink: 0,
+                                                padding: 0
+                                              }}
+                                            >
+                                              {isCorrect && (
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ width: '16px', height: '16px' }}>
+                                                  <polyline points="20 6 9 17 4 12"></polyline>
+                                                </svg>
+                                              )}
+                                            </button>
+
+                                            {/* Input field with dynamic highlighting */}
+                                            <input 
+                                              value={opt} 
+                                              onChange={(e) => updateOption(q.id, optIndex, e.target.value)} 
+                                              placeholder={`Option ${optIndex + 1}`} 
+                                              required 
+                                              style={{ 
+                                                flexGrow: 1,
+                                                padding: '0.5rem',
+                                                borderColor: isCorrect ? '#10b981' : 'var(--border-color)',
+                                                backgroundColor: isCorrect ? 'rgba(16, 185, 129, 0.05)' : 'transparent',
+                                                fontWeight: isCorrect ? '500' : 'normal',
+                                                transition: 'all 0.2s ease'
+                                              }}
+                                            />
+                                            
+                                            <button type="button" className="icon-btn danger" onClick={() => removeOption(q.id, optIndex)} disabled={(q.options || []).length <= 2}>Remove</button>
+                                          </div>
+                                        );
+                                      })}
+                                      <div className="option-actions" style={{ marginTop: '1rem' }}>
                                         <button type="button" className="btn btn-secondary btn-small" onClick={() => addOption(q.id)}>Add Option</button>
-                                        <button type="button" className="btn btn-secondary btn-small" onClick={() => addOtherChoice(q.id)}>Add Other</button>
+                                        <button type="button" className="btn btn-secondary btn-small" onClick={() => addOtherChoice(q.id)}>Add "Other"</button>
                                       </div>
                                     </div>
                                   )}
