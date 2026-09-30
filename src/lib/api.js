@@ -155,11 +155,11 @@ export async function getParentStats(token) {
   })
 }
 
-export async function linkChild(childUsername, token) {
+export async function linkChild(connectionCode, token) {
   return apiRequest('/parent/link_child', {
     method: 'POST',
     token,
-    body: { child_username: childUsername },
+    body: { connection_code: connectionCode },
   })
 }
 

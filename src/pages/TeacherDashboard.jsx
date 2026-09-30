@@ -389,6 +389,9 @@ function TeacherDashboard({ session, onLogout }) {
   const [teacherAnalyticsModal, setTeacherAnalyticsModal] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedStudent, setSelectedStudent] = useState(null)
+  const [parentLinkCode, setParentLinkCode] = useState('')
+  const [parentLinkCodeExpiresAt, setParentLinkCodeExpiresAt] = useState('')
+  const [generatingParentLinkCode, setGeneratingParentLinkCode] = useState(false)
 
   const [announcements, setAnnouncements] = useState([])
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(false)
@@ -646,6 +649,41 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
       setLoading(false)
     }
   }, [handlePasswordRequired, onLogout, passwordChangeRequired, session])
+
+  const generateParentLinkCode = async () => {
+    const studentPublicId = selectedStudent?.student_public_id
+    if (!studentPublicId) {
+      setError('This student cannot be identified for a connection code.')
+      return
+    }
+
+    try {
+      setGeneratingParentLinkCode(true)
+      setError('')
+      setSuccessMessage('')
+      setParentLinkCode('')
+      setParentLinkCodeExpiresAt('')
+      const result = await apiRequest(
+        `/teacher/student/${encodeURIComponent(studentPublicId)}/parent-link-code`,
+        { method: 'POST', token: session.token },
+      )
+      setParentLinkCode(result.connection_code || '')
+      setParentLinkCodeExpiresAt(result.expires_at || '')
+      setSuccessMessage('Connection code generated. Share it privately with the parent; it expires in 24 hours.')
+    } catch (err) {
+      if (err.status === 401) {
+        onLogout()
+        return
+      }
+      if (isPasswordChangeRequiredError(err)) {
+        handlePasswordRequired()
+        return
+      }
+      setError(err.message || 'Failed to generate a connection code.')
+    } finally {
+      setGeneratingParentLinkCode(false)
+    }
+  }
 
   useEffect(() => {
     if (passwordChangeRequired) return
@@ -2063,7 +2101,11 @@ const createAnnouncement = async (event) => {
                           return (
                             <div 
                               key={student.student_id || student.id}
-                              onClick={() => setSelectedStudent(student)}
+                              onClick={() => {
+                                setSelectedStudent(student)
+                                setParentLinkCode('')
+                                setParentLinkCodeExpiresAt('')
+                              }}
                               style={{
                                 padding: '1rem 1.5rem',
                                 borderBottom: '1px solid var(--border-color, #eee)',
@@ -2100,6 +2142,29 @@ const createAnnouncement = async (event) => {
                           <h4 style={{ margin: '0 0 0.5rem' }}>Linked Parent Information</h4>
                           <p style={{ margin: 0 }}>{selectedStudent.parent_name ?? 'No parent currently linked'}</p>
                         </div>
+                        {!selectedStudent.parent_id && (
+                          <div style={{ padding: '1rem', background: '#f9fafb', borderRadius: '8px', marginBottom: '1.5rem' }}>
+                            <h4 style={{ margin: '0 0 0.5rem' }}>Parent Connection Code</h4>
+                            <p style={{ margin: '0 0 0.75rem' }}>Generate a private 10-character code for this student to share with their parent. It expires after 24 hours.</p>
+                            <button
+                              className="btn btn-secondary"
+                              type="button"
+                              onClick={generateParentLinkCode}
+                              disabled={generatingParentLinkCode}
+                            >
+                              {generatingParentLinkCode ? 'Generating...' : 'Generate Connection Code'}
+                            </button>
+                            {parentLinkCode && (
+                              <div style={{ marginTop: '0.75rem' }}>
+                                <code style={{ fontSize: '1.25rem', fontWeight: 700, letterSpacing: '0.12em' }}>{parentLinkCode}</code>
+                                <p style={{ margin: '0.4rem 0 0' }}>
+                                  Expires {parentLinkCodeExpiresAt ? new Date(parentLinkCodeExpiresAt).toLocaleString() : 'in 24 hours'}.
+                                  Generating another code invalidates this one.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <button
                           className="btn btn-primary"
                           disabled={!selectedStudent.parent_name}

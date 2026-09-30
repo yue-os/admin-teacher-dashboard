@@ -71,7 +71,7 @@ function ParentDashboard({ session, onLogout }) {
   const [successMessage, setSuccessMessage] = useState(() =>
     location.state?.passwordReminder ? passwordReminderText : '',
   )
-  const [childUsername, setChildUsername] = useState('')
+  const [connectionCode, setConnectionCode] = useState('')
   const [linking, setLinking] = useState(false)
   const [selectedChildUsername, setSelectedChildUsername] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
@@ -335,9 +335,9 @@ function ParentDashboard({ session, onLogout }) {
 
   const handleLinkChild = async (event) => {
     event.preventDefault()
-    const username = childUsername.trim()
-    if (!username) {
-      setError('Enter a child username first.')
+    const code = connectionCode.replace(/[\s-]/g, '').toUpperCase()
+    if (!code) {
+      setError('Enter the student connection code first.')
       return
     }
 
@@ -345,9 +345,9 @@ function ParentDashboard({ session, onLogout }) {
       setLinking(true)
       setError('')
       setSuccessMessage('')
-      await linkChild(username, session.token)
-      setChildUsername('')
-      setSuccessMessage(`Linked ${username} successfully.`)
+      await linkChild(code, session.token)
+      setConnectionCode('')
+      setSuccessMessage('Student linked successfully.')
       await loadStats()
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
@@ -358,22 +358,6 @@ function ParentDashboard({ session, onLogout }) {
       setError(err.message || 'Failed to link child')
     } finally {
       setLinking(false)
-    }
-  }
-
-  const handleAcceptRequest = async (request) => {
-    const username = request.sender_username || request.student_name
-    try {
-      setError('')
-      setSuccessMessage('')
-      await linkChild(username, session.token)
-      await deleteParentMessage(request.id, session.token)
-      setSuccessMessage(`Linked ${username} successfully.`)
-      await loadStats()
-      await fetchMessages()
-      setTimeout(() => setSuccessMessage(''), 3000)
-    } catch (err) {
-      setError(err.message || 'Failed to accept linking request')
     }
   }
 
@@ -778,21 +762,15 @@ function ParentDashboard({ session, onLogout }) {
                     <div key={request.id} className="request-card">
                       <div className="request-info">
                         <strong>{request.sender_name}</strong>
-                        <p>{request.content}</p>
+                        <p>Username-based linking requests have expired. Ask the student to generate a new connection code.</p>
                         <small>{formatMessageTimestamp(request.created_at)}</small>
                       </div>
                       <div className="request-actions">
                         <button 
-                          className="btn btn-primary btn-sm" 
-                          onClick={() => handleAcceptRequest(request)}
-                        >
-                          Accept
-                        </button>
-                        <button 
                           className="btn btn-secondary btn-sm" 
                           onClick={() => handleDenyRequest(request)}
                         >
-                          Deny
+                          Dismiss
                         </button>
                       </div>
                     </div>
@@ -834,18 +812,23 @@ function ParentDashboard({ session, onLogout }) {
                 <h2>Link a Child</h2>
                 <form className="form-grid" onSubmit={handleLinkChild}>
                   <label className="field">
-                    Child username, email, public ID, or full name
+                    Student connection code
                     <input
                       type="text"
-                      value={childUsername}
-                      onChange={(event) => setChildUsername(event.target.value)}
-                      placeholder="Enter student identifier"
+                      value={connectionCode}
+                      onChange={(event) => setConnectionCode(event.target.value.toUpperCase())}
+                      placeholder="Enter the 10-character code"
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      spellCheck={false}
+                      maxLength={10}
                       required
                     />
                   </label>
                   <button className="btn btn-primary" type="submit" disabled={linking}>
-                    {linking ? 'Linking...' : 'Link Child'}
+                    {linking ? 'Linking...' : 'Connect Student'}
                   </button>
+                  <p className="info-text">Ask the student or their teacher to generate a code. Each code expires after 24 hours and can be used once.</p>
                 </form>
               </article>
 
