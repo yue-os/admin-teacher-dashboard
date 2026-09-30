@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
 import DashboardShell from '../components/DashboardShell'
 import Loading from '../components/Loading'
+import AdminActivityLog from '../components/AdminActivityLog'
 import { apiRequest } from '../lib/api'
 
 const USER_TEMPLATE = {
@@ -873,6 +874,7 @@ function AdminDashboard({ session, onLogout }) {
               <option value="csv">Bulk Upload (CSV)</option>
               <option value="classes">Class Management</option>
               <option value="password-resets">Password Resets</option>
+              <option value="activity">Activity Log</option>
             </select>
           </div>
 
@@ -906,6 +908,12 @@ function AdminDashboard({ session, onLogout }) {
               onClick={() => setActiveTab('password-resets')}
             >
               Password Resets
+            </button>
+            <button
+              className={`tab ${activeTab === 'activity' ? 'active' : ''}`}
+              onClick={() => setActiveTab('activity')}
+            >
+              Activity Log
             </button>
           </nav>
 
@@ -1670,6 +1678,10 @@ function AdminDashboard({ session, onLogout }) {
                 </form>
               </article>
             </div>
+          )}
+
+          {activeTab === 'activity' && (
+            <AdminActivityLog session={session} onLogout={onLogout} />
           )}
 
         </>
