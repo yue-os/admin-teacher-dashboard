@@ -1008,6 +1008,70 @@ tr:last-child td {
   font-size: 13px;
 }
 
+.password-strength {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.password-strength-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-weight: 650;
+}
+
+.password-strength-bar {
+  width: 100%;
+  height: 0.55rem;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  appearance: none;
+  background: #e2e8f0;
+  accent-color: #ef4444;
+}
+
+.password-strength-bar::-webkit-progress-bar {
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.password-strength-bar--2,
+.password-strength-bar--3 {
+  accent-color: #f59e0b;
+}
+
+.password-strength-bar--4,
+.password-strength-bar--5 {
+  accent-color: #16a34a;
+}
+
+.password-strength-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.2rem 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.password-strength-checks li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.password-strength-checks li span {
+  color: #94a3b8;
+}
+
+.password-strength-checks li.is-valid,
+.password-strength-checks li.is-valid span {
+  color: #15803d;
+}
+
 .user-summary-panel {
   display: grid;
   grid-template-columns: 1fr 1fr;

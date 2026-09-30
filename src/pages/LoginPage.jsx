@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { requestPasswordReset } from '../lib/api'
+import PasswordStrengthMeter from '../components/PasswordStrengthMeter'
+import { isPasswordCompliant } from '../lib/passwordPolicy'
 
 function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, error }) {
   const [form, setForm] = useState({ username: '', password: '' })
@@ -27,7 +29,7 @@ function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, er
 
   const onPasswordSubmit = (event) => {
     event.preventDefault()
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) return
+    if (!isPasswordCompliant(passwordForm.newPassword) || passwordForm.newPassword !== passwordForm.confirmPassword) return
     onChangePassword({ newPassword: passwordForm.newPassword })
   }
 
@@ -81,6 +83,7 @@ function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, er
                 required
               />
             </label>
+            <PasswordStrengthMeter password={passwordForm.newPassword} id="login-change-password-strength" />
 
             <label className="field">
               Confirm password
@@ -107,7 +110,7 @@ function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, er
               type="submit"
               disabled={
                 isSubmitting ||
-                !passwordForm.newPassword ||
+                !isPasswordCompliant(passwordForm.newPassword) ||
                 passwordForm.newPassword !== passwordForm.confirmPassword
               }
             >

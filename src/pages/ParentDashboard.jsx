@@ -4,6 +4,8 @@ import DashboardShell from '../components/DashboardShell'
 import Loading from '../components/Loading'
 import { getParentStats, linkChild, unlinkChild, deleteParentMessage, apiRequest } from '../lib/api'
 import { saveSession } from '../lib/auth'
+import PasswordStrengthMeter from '../components/PasswordStrengthMeter'
+import { isPasswordCompliant, PASSWORD_POLICY_ERROR } from '../lib/passwordPolicy'
 
 const passwordReminderText = 'For better account security, you can update your password anytime in My Profile.'
 
@@ -467,6 +469,12 @@ function ParentDashboard({ session, onLogout }) {
   const handlePasswordChange = async (event) => {
     event.preventDefault()
 
+    if (!isPasswordCompliant(passwordForm.newPassword)) {
+      setError(PASSWORD_POLICY_ERROR)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       setError('New passwords do not match.')
       window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -602,6 +610,7 @@ function ParentDashboard({ session, onLogout }) {
                       required
                     />
                   </label>
+                  <PasswordStrengthMeter password={passwordForm.newPassword} id="parent-change-password-strength" />
                   <label className="field">
                     New Password
                     <input
@@ -624,7 +633,7 @@ function ParentDashboard({ session, onLogout }) {
                       required
                     />
                   </label>
-                  <button className="btn btn-primary" type="submit" disabled={changingPassword}>
+                  <button className="btn btn-primary" type="submit" disabled={changingPassword || !isPasswordCompliant(passwordForm.newPassword)}>
                     {changingPassword ? 'Changing...' : 'Change Password'}
                   </button>
                 </form>

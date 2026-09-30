@@ -6,6 +6,8 @@ import DashboardShell from '../components/DashboardShell'
 import Loading from '../components/Loading'
 import { apiRequest } from '../lib/api'
 import { saveSession } from '../lib/auth'
+import PasswordStrengthMeter from '../components/PasswordStrengthMeter'
+import { isPasswordCompliant, PASSWORD_POLICY_ERROR } from '../lib/passwordPolicy'
 
 const passwordReminderText = 'For better account security, you can update your password anytime in My Profile.'
 const passwordRequiredText = 'Please change your temporary password in My Profile before loading teacher dashboard data.'
@@ -1686,6 +1688,12 @@ const createAnnouncement = async (event) => {
 
   const handlePasswordReset = async (e) => {
     e.preventDefault()
+
+    if (!isPasswordCompliant(profileForm.newPassword)) {
+      setError(PASSWORD_POLICY_ERROR)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
     
     if (profileForm.newPassword !== profileForm.confirmPassword) {
       setError("New passwords do not match.")
@@ -2003,8 +2011,9 @@ const createAnnouncement = async (event) => {
               <form className="form-grid" onSubmit={handlePasswordReset}>
                 <label className="field">Current Password <input type="password" value={profileForm.currentPassword} onChange={(e) => setProfileForm({...profileForm, currentPassword: e.target.value})} autoComplete="current-password" required /></label>
                 <label className="field">New Password <input type="password" value={profileForm.newPassword} onChange={(e) => setProfileForm({...profileForm, newPassword: e.target.value})} minLength={8} autoComplete="new-password" required /></label>
+                <PasswordStrengthMeter password={profileForm.newPassword} id="teacher-change-password-strength" />
                 <label className="field">Confirm New Password <input type="password" value={profileForm.confirmPassword} onChange={(e) => setProfileForm({...profileForm, confirmPassword: e.target.value})} minLength={8} autoComplete="new-password" required /></label>
-                <button className="btn btn-primary" type="submit" disabled={updatingProfile}>
+                <button className="btn btn-primary" type="submit" disabled={updatingProfile || !isPasswordCompliant(profileForm.newPassword)}>
                   {updatingProfile ? 'Changing...' : 'Change Password'}
                 </button>
               </form>

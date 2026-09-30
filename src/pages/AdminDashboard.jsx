@@ -3,7 +3,9 @@ import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, Cart
 import DashboardShell from '../components/DashboardShell'
 import Loading from '../components/Loading'
 import AdminActivityLog from '../components/AdminActivityLog'
+import PasswordStrengthMeter from '../components/PasswordStrengthMeter'
 import { apiRequest } from '../lib/api'
+import { isPasswordCompliant, PASSWORD_POLICY_ERROR } from '../lib/passwordPolicy'
 
 const USER_TEMPLATE = {
   first_name: '',
@@ -281,6 +283,11 @@ function AdminDashboard({ session, onLogout }) {
 
   const submitUser = async (event) => {
     event.preventDefault()
+
+    if ((!editingUserId || form.password) && !isPasswordCompliant((form.password || '').trim())) {
+      setError(PASSWORD_POLICY_ERROR)
+      return
+    }
 
     try {
       setSaving(true)
@@ -989,15 +996,16 @@ function AdminDashboard({ session, onLogout }) {
                       </label>
                       <label className="field">
                         Password
-                        <input name="password" type="password" value={form.password || ''} onChange={onFieldChange} required />
+                        <input name="password" type="password" value={form.password || ''} onChange={onFieldChange} autoComplete="new-password" minLength={8} required />
                       </label>
                     </div>
+                    <PasswordStrengthMeter password={(form.password || '').trim()} id="create-user-password-strength" />
 
                     <div className="user-form-footer">
                       <span className="form-note">
                         Temporary credentials are generated after creation.
                       </span>
-                      <button className="btn btn-primary" type="submit" disabled={saving}>
+                      <button className="btn btn-primary" type="submit" disabled={saving || !isPasswordCompliant((form.password || '').trim())}>
                         {saving ? 'Saving...' : 'Create user'}
                       </button>
                     </div>
@@ -1070,10 +1078,13 @@ function AdminDashboard({ session, onLogout }) {
                             type="password" 
                             value={form.password || ''} 
                             onChange={onFieldChange} 
+                            autoComplete="new-password"
+                            minLength={8}
                             placeholder="Leave blank to keep current" 
                           />
                         </label>
                       </div>
+                      {form.password && <PasswordStrengthMeter password={form.password.trim()} id="edit-user-password-strength" />}
                       
                       <div className="field-row">
                         <label className="field">
@@ -1092,7 +1103,7 @@ function AdminDashboard({ session, onLogout }) {
                       </div>
                       <div className="user-form-footer">
                         <button className="btn btn-ghost" type="button" onClick={resetForm}>Cancel edit</button>
-                        <button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Update user'}</button>
+                        <button className="btn btn-primary" type="submit" disabled={saving || Boolean(form.password && !isPasswordCompliant(form.password.trim()))}>{saving ? 'Saving...' : 'Update user'}</button>
                       </div>
                     </form>
                   </section>

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { completePasswordReset, verifyPasswordResetToken } from '../lib/api'
+import PasswordStrengthMeter from '../components/PasswordStrengthMeter'
+import { isPasswordCompliant } from '../lib/passwordPolicy'
 
 function ResetPasswordPage() {
   const location = useLocation()
@@ -47,7 +49,7 @@ function ResetPasswordPage() {
 
   const onSubmit = async (event) => {
     event.preventDefault()
-    if (form.newPassword !== form.confirmPassword) return
+    if (!isPasswordCompliant(form.newPassword) || form.newPassword !== form.confirmPassword) return
 
     try {
       setSubmitting(true)
@@ -100,11 +102,13 @@ function ResetPasswordPage() {
                 type="password"
                 name="newPassword"
                 minLength={8}
+                autoComplete="new-password"
                 value={form.newPassword}
                 onChange={onChange}
                 required
               />
             </label>
+            <PasswordStrengthMeter password={form.newPassword} id="reset-password-strength" />
             <label className="field">
               Confirm password
               <input
@@ -123,7 +127,7 @@ function ResetPasswordPage() {
             <button
               className="btn btn-primary"
               type="submit"
-              disabled={submitting || !form.newPassword || form.newPassword !== form.confirmPassword}
+              disabled={submitting || !isPasswordCompliant(form.newPassword) || form.newPassword !== form.confirmPassword}
             >
               {submitting ? 'Saving...' : 'Set new password'}
             </button>
