@@ -60,7 +60,10 @@ export async function requestPasswordReset(email, role) {
 }
 
 export async function verifyPasswordResetToken(token) {
-  return apiRequest(`/auth/password-reset/verify?token=${encodeURIComponent(token)}`)
+  return apiRequest('/auth/password-reset/verify', {
+    method: 'POST',
+    body: { token },
+  })
 }
 
 export async function completePasswordReset(token, newPassword) {

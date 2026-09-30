@@ -43,7 +43,7 @@ function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, er
       setResetError('')
       setResetStatus('')
       const response = await requestPasswordReset(resetForm.email, resetForm.role)
-      setResetStatus(response?.message || 'Your request was submitted for admin review.')
+      setResetStatus(response?.message || 'If an account matches, a reset link will be emailed. It expires in 30 minutes.')
       setResetForm({ email: '', role: 'Student' })
     } catch (err) {
       setResetError(err.message || 'Unable to submit reset request.')
@@ -118,7 +118,7 @@ function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, er
           <form onSubmit={onResetSubmit} className="form-grid">
             <div>
               <h2>Forgot Password</h2>
-              <p className="subtitle">Submit a reset request for admin review.</p>
+              <p className="subtitle">Request a secure reset link by email. If the account matches, the link expires in 30 minutes.</p>
             </div>
 
             <label className="field">
@@ -146,7 +146,7 @@ function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, er
             {resetStatus && <p className="success-text">{resetStatus}</p>}
 
             <button className="btn btn-primary" type="submit" disabled={resetSubmitting}>
-              {resetSubmitting ? 'Submitting...' : 'Submit reset request'}
+              {resetSubmitting ? 'Sending...' : 'Send reset link'}
             </button>
             <button className="btn btn-ghost" type="button" onClick={() => setShowForgotPassword(false)}>
               Back to sign in

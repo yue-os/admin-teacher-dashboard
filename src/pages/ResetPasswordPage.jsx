@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { completePasswordReset, verifyPasswordResetToken } from '../lib/api'
 
 function ResetPasswordPage() {
-  const [searchParams] = useSearchParams()
-  const token = useMemo(() => searchParams.get('token') || '', [searchParams])
+  const location = useLocation()
+  const token = useMemo(() => {
+    const queryToken = new URLSearchParams(location.search).get('token')
+    const hashToken = new URLSearchParams(location.hash.replace(/^#/, '')).get('token')
+    return hashToken || queryToken || ''
+  }, [location.hash, location.search])
+
   const [loading, setLoading] = useState(true)
   const [tokenInfo, setTokenInfo] = useState(null)
   const [error, setError] = useState('')
@@ -69,7 +74,7 @@ function ResetPasswordPage() {
         <div className="auth-brand">
           <img className="brand-logo login-logo" src="/batangaware-logo.png" alt="BatangAware" />
           <h1 className="neon-text glitch-hover">Reset Password</h1>
-          <p className="subtitle">Set a new password using your approved reset link.</p>
+          <p className="subtitle">Set a new password using your secure reset link.</p>
         </div>
 
         {loading ? (

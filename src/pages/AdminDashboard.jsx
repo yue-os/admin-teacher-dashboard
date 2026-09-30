@@ -23,7 +23,6 @@ function AdminDashboard({ session, onLogout }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
-  const [passwordResetLink, setPasswordResetLink] = useState('')
   const [createdCredentials, setCreatedCredentials] = useState(null)
   const [analyticsModal, setAnalyticsModal] = useState(null)
 
@@ -33,7 +32,6 @@ function AdminDashboard({ session, onLogout }) {
   const [saving, setSaving] = useState(false)
   const [userSearch, setUserSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('All')
-  const [reviewingResetId, setReviewingResetId] = useState(null)
 
   // CSV upload state
   const [csvFile, setCsvFile] = useState(null)
@@ -812,38 +810,7 @@ function AdminDashboard({ session, onLogout }) {
     })
   }, [formatUserClasses, roleFilter, userSearch, users])
 
-  const reviewPasswordResetRequest = async (requestId, status) => {
-    const confirmed = window.confirm(
-      status === 'Approved'
-        ? 'Approve this password reset and email a secure reset link?'
-        : 'Reject this password reset request?',
-    )
-    if (!confirmed) return
 
-    try {
-      setReviewingResetId(requestId)
-      setError('')
-      setSuccessMessage('')
-      setPasswordResetLink('')
-      const result = await apiRequest(`/api/admin/password-reset-requests/${requestId}`, {
-        method: 'PATCH',
-        token: session.token,
-        body: { status },
-      })
-      setPasswordResetRequests((current) =>
-        current.map((item) => (item.id === requestId ? result.request : item)),
-      )
-      setSuccessMessage(result.message || `Password reset request ${status.toLowerCase()}.`)
-      setPasswordResetLink(result.reset_link || '')
-      if (!result.reset_link) {
-        setTimeout(() => setSuccessMessage(''), 4000)
-      }
-    } catch (err) {
-      setError(err.message || 'Unable to review password reset request.')
-    } finally {
-      setReviewingResetId(null)
-    }
-  }
 
   const deleteClass = async (classId) => {
     const confirmed = window.confirm(
@@ -888,12 +855,7 @@ function AdminDashboard({ session, onLogout }) {
     >
       {error && <p className="error-text panel" role="alert">{error}</p>}
       {successMessage && <p className="success-text panel" role="status">{successMessage}</p>}
-      {passwordResetLink && (
-        <div className="info-text panel">
-          <strong>Manual reset link:</strong>
-          <code>{passwordResetLink}</code>
-        </div>
-      )}
+
 
       {loading ? (
         <Loading message="Fetching administrative data..." />
@@ -1222,8 +1184,8 @@ function AdminDashboard({ session, onLogout }) {
             <section className="panel users-list-panel">
               <div className="panel-head users-list-head">
                 <div>
-                  <h2>Password Reset Requests</h2>
-                  <p className="subtitle">Review requests, approve secure email links, and monitor reset activity.</p>
+                  <h2>Password Reset Activity</h2>
+                  <p className="subtitle">Reset links are emailed automatically and expire after 30 minutes.</p>
                 </div>
                 <button className="btn btn-secondary" type="button" onClick={fetchPasswordResetRequests}>
                   Refresh
@@ -1239,13 +1201,12 @@ function AdminDashboard({ session, onLogout }) {
                       <th>Request Time</th>
                       <th>Status</th>
                       <th>Security Activity</th>
-                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {passwordResetRequests.length === 0 ? (
                       <tr>
-                        <td colSpan={6}>No password reset requests yet.</td>
+                        <td colSpan={5}>No password reset requests yet.</td>
                       </tr>
                     ) : (
                       passwordResetRequests.map((item) => (
@@ -1253,39 +1214,37 @@ function AdminDashboard({ session, onLogout }) {
                           <td>
                             <strong>{item.email}</strong>
                             <br />
-                            <span className="muted-cell">{item.matched_user ? item.user_name : 'No matching account found yet'}</span>
+                            <span className="muted-cell">{item.matched_user ? item.user_name : 'No account matched'}</span>
                           </td>
-                          <td><span className={`role-pill role-${String(item.role).toLowerCase()}`}>{item.role}</span></td>
+                          <td><span className={'role-pill role-' + String(item.role).toLowerCase()}>{item.role}</span></td>
                           <td>{item.request_time ? new Date(item.request_time).toLocaleString() : 'Unknown'}</td>
-                          <td><span className={`badge ${item.status === 'Approved' || item.status === 'Used' ? 'success' : item.status === 'Rejected' || item.status === 'Expired' ? 'danger' : 'warning'}`}>{item.status}</span></td>
+                          <td>
+                            <span className={'badge ' + (['Queued', 'Sent', 'Approved', 'Used'].includes(item.status) ? 'success' : ['Rejected', 'Expired', 'DeliveryFailed'].includes(item.status) ? 'danger' : 'warning')}>
+                              {item.status}
+                            </span>
+                          </td>
                           <td>
                             <span className="muted-cell">
-                              {item.email_sent_at ? `Email sent ${new Date(item.email_sent_at).toLocaleString()}` : 'Email not sent'}
+                              {item.email_queued_at ? 'Email attempt started ' + new Date(item.email_queued_at).toLocaleString() : 'No reset email attempt recorded'}
                             </span>
+                            {item.email_sent_at && (
+                              <>
+                                <br />
+                                <span className="muted-cell">Email accepted {new Date(item.email_sent_at).toLocaleString()}</span>
+                              </>
+                            )}
+                            {item.expires_at && ['Queued', 'Sent'].includes(item.status) && (
+                              <>
+                                <br />
+                                <span className="muted-cell">Link expires {new Date(item.expires_at).toLocaleString()}</span>
+                              </>
+                            )}
                             {item.used_at && (
                               <>
                                 <br />
                                 <span className="muted-cell">Used {new Date(item.used_at).toLocaleString()}</span>
                               </>
                             )}
-                          </td>
-                          <td className="actions-cell">
-                            <button
-                              className="btn btn-secondary btn-small"
-                              type="button"
-                              disabled={item.status !== 'Pending' || reviewingResetId === item.id}
-                              onClick={() => reviewPasswordResetRequest(item.id, 'Approved')}
-                            >
-                              {reviewingResetId === item.id ? 'Reviewing...' : 'Approve'}
-                            </button>
-                            <button
-                              className="btn btn-danger btn-small"
-                              type="button"
-                              disabled={item.status !== 'Pending' || reviewingResetId === item.id}
-                              onClick={() => reviewPasswordResetRequest(item.id, 'Rejected')}
-                            >
-                              Reject
-                            </button>
                           </td>
                         </tr>
                       ))
@@ -1295,7 +1254,6 @@ function AdminDashboard({ session, onLogout }) {
               </div>
             </section>
           )}
-
 
           {activeTab === 'csv' && (
             <article className="panel csv-import-panel">
