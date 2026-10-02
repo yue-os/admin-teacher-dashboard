@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiRequest } from '../lib/api'
 import './AdminActivityLog.css'
 
-const PAGE_SIZE = 30
+const PAGE_SIZE = 15
 
 const formatTimestamp = (value) => {
   const date = new Date(value)
@@ -82,11 +82,12 @@ function AdminActivityLog({ session, onLogout }) {
     } finally {
       if (requestId === requestSequence.current) setLoading(false)
     }
-  }, [actionType, fromDate, onLogout, pagination.offset, refreshCount, role, search, session.token, toDate])
+  }, [actionType, fromDate, onLogout, pagination.offset, role, search, session.token, toDate])
 
   useEffect(() => {
-    void fetchLogs()
-  }, [fetchLogs])
+    const timer = window.setTimeout(() => { void fetchLogs() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [fetchLogs, refreshCount])
 
   const range = useMemo(() => {
     if (!pagination.total) return 'No events'

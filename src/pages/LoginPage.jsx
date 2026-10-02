@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { requestPasswordReset } from '../lib/api'
 import PasswordStrengthMeter from '../components/PasswordStrengthMeter'
 import { isPasswordCompliant } from '../lib/passwordPolicy'
 
-function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, error }) {
+function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, error, cooldownUntil = 0 }) {
   const [form, setForm] = useState({ username: '', password: '' })
   const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' })
   const [showForgotPassword, setShowForgotPassword] = useState(false)
@@ -11,6 +11,17 @@ function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, er
   const [resetStatus, setResetStatus] = useState('')
   const [resetError, setResetError] = useState('')
   const [resetSubmitting, setResetSubmitting] = useState(false)
+  const [cooldownSeconds, setCooldownSeconds] = useState(0)
+
+  useEffect(() => {
+    const updateCountdown = () => {
+      setCooldownSeconds(Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000)))
+    }
+    updateCountdown()
+    if (!cooldownUntil) return undefined
+    const interval = window.setInterval(updateCountdown, 1000)
+    return () => window.clearInterval(interval)
+  }, [cooldownUntil])
 
   const onChange = (event) => {
     const { name, value } = event.target
@@ -19,6 +30,7 @@ function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, er
 
   const onSubmit = (event) => {
     event.preventDefault()
+    if (cooldownSeconds > 0) return
     onLogin(form)
   }
 
@@ -181,10 +193,11 @@ function LoginPage({ onLogin, onChangePassword, passwordChange, isSubmitting, er
             />
           </label>
 
-          {error && <p className="error-text">{error}</p>}
+          {error && <p className="error-text" role="alert">{error}</p>}
+          {cooldownSeconds > 0 && <p className="info-text" role="status">Sign-in is paused for {cooldownSeconds} seconds.</p>}
 
-          <button className="btn btn-primary" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Signing in...' : 'Sign in'}
+          <button className="btn btn-primary" type="submit" disabled={isSubmitting || cooldownSeconds > 0}>
+            {isSubmitting ? 'Signing in...' : cooldownSeconds > 0 ? `Try again in ${cooldownSeconds}s` : 'Sign in'}
           </button>
           <button className="btn btn-ghost" type="button" onClick={() => setShowForgotPassword(true)}>
             Forgot Password?

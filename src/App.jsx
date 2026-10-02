@@ -29,6 +29,7 @@ function App() {
   const navigate = useNavigate()
   const [session, setSession] = useState(() => loadSession())
   const [loginError, setLoginError] = useState('')
+  const [loginCooldownUntil, setLoginCooldownUntil] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [passwordChange, setPasswordChange] = useState(null)
 
@@ -52,6 +53,15 @@ function App() {
     return () => window.removeEventListener('storage', handleStorageChange)
   }, [session, navigate])
 
+  useEffect(() => {
+    if (!loginCooldownUntil) return undefined
+    const timer = window.setTimeout(() => {
+      setLoginCooldownUntil(0)
+      setLoginError('')
+    }, Math.max(0, loginCooldownUntil - Date.now()))
+    return () => window.clearTimeout(timer)
+  }, [loginCooldownUntil])
+
   const homePath = useMemo(() => {
     return getDashboardPath(session?.role) || '/'
   }, [session])
@@ -65,6 +75,7 @@ function App() {
 // App.jsx
 
   const handleLogin = async ({ username, password }) => {
+    if (Date.now() < loginCooldownUntil) return
     try {
       setLoginError('')
       setIsSubmitting(true)
@@ -74,6 +85,7 @@ function App() {
       nextSession.mustChangePassword = Boolean(mustChangePassword)
 
       setPasswordChange(null)
+      setLoginCooldownUntil(0)
       setSession(nextSession)
       saveSession(nextSession)
 
@@ -83,6 +95,9 @@ function App() {
       })
     } catch (error) {
       setLoginError(error.message)
+      if (error.retryAfter > 0) {
+        setLoginCooldownUntil(Date.now() + error.retryAfter * 1000)
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -126,6 +141,7 @@ function App() {
                   passwordChange={passwordChange}
                   isSubmitting={isSubmitting}
                   error={loginError}
+                  cooldownUntil={loginCooldownUntil}
                 />
               )
             }

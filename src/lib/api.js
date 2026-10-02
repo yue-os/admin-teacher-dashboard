@@ -28,6 +28,7 @@ export async function apiRequest(path, { method = 'GET', body, token } = {}) {
     const message = data?.error || data?.detail || data?.message || `Request failed (${response.status})`
     const error = new Error(message)
     error.status = response.status
+    error.retryAfter = Number(data?.retry_after) || 0
     throw error
   }
 

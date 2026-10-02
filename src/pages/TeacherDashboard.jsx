@@ -4,6 +4,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as
 import ExcelJS from 'exceljs'
 import DashboardShell from '../components/DashboardShell'
 import Loading from '../components/Loading'
+import PaginationControls from '../components/PaginationControls'
 import { apiRequest } from '../lib/api'
 import { saveSession } from '../lib/auth'
 import PasswordStrengthMeter from '../components/PasswordStrengthMeter'
@@ -315,7 +316,7 @@ const parseQuizQuestionsCsv = (source) => {
       const letterAnswer = answerInput.match(/^([a-d])$/i)
       const numericAnswer = answerInput.match(/^\d+$/)
       const matchedOption = options.findIndex((option) => option.toLowerCase() === answerInput.toLowerCase())
-      let correctIndex = -1
+      let correctIndex
       if (letterAnswer) {
         correctIndex = letterAnswer[1].toUpperCase().charCodeAt(0) - 65
       } else if (numericAnswer) {
@@ -427,12 +428,17 @@ function TeacherDashboard({ session, onLogout }) {
   }
   const [activeQuestionId, setActiveQuestionId] = useState(null)
   const [completedQuizResults, setCompletedQuizResults] = useState([])
+  const [completedQuizResultsPage, setCompletedQuizResultsPage] = useState(1)
+  const [completedQuizResultsTotal, setCompletedQuizResultsTotal] = useState(0)
+  const [completedQuizAverageScore, setCompletedQuizAverageScore] = useState(0)
   const [loadingCompletedQuizResults, setLoadingCompletedQuizResults] = useState(false)
   const [feedbackDraft, setFeedbackDraft] = useState(null)
   const [sendingFeedback, setSendingFeedback] = useState(false)
   const [retakeQuiz, setRetakeQuiz] = useState(null)
 
-const [allQuizzes, setAllQuizzes] = useState([]); // List for existing quizzes
+const [allQuizzes, setAllQuizzes] = useState([])
+const [quizzesPage, setQuizzesPage] = useState(1)
+const [quizzesTotal, setQuizzesTotal] = useState(0)
 const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are editing an old quiz
   const [lobbies, setLobbies] = useState([])
   const [loadingLobbies, setLoadingLobbies] = useState(false)
@@ -507,19 +513,23 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     setError(passwordRequiredText)
   }, [])
 
-  const fetchQuizzes = useCallback(async () => {
+  const fetchQuizzes = useCallback(async (page = quizzesPage) => {
     if (passwordChangeRequired) {
       setAllQuizzes(SAMPLE_QUIZZES)
       return
     }
 
     try {
-      const result = await apiRequest('/teacher/quizzes', {
+      const query = new URLSearchParams({ page: String(page), limit: '15' })
+      const result = await apiRequest(`/teacher/quizzes?${query.toString()}`, {
         token: session.token,
       });
       const quizzes = Array.isArray(result?.quizzes) ? result.quizzes : Array.isArray(result) ? result : []
       const normalized = quizzes.map(normalizeQuiz).filter(Boolean)
-      setAllQuizzes(normalized.length ? normalized : SAMPLE_QUIZZES)
+      const total = result?.pagination?.total ?? normalized.length
+      setQuizzesTotal(total)
+      setQuizzesPage(Math.min(page, Math.max(1, Math.ceil(total / 15))))
+      setAllQuizzes(normalized)
     } catch (err) {
       if (isPasswordChangeRequiredError(err)) {
         handlePasswordRequired()
@@ -527,9 +537,9 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
         return
       }
       console.error("Failed to fetch quizzes", err);
-      setAllQuizzes(SAMPLE_QUIZZES)
+      setAllQuizzes([])
     }
-  }, [SAMPLE_QUIZZES, handlePasswordRequired, passwordChangeRequired, session.token]);
+  }, [SAMPLE_QUIZZES, handlePasswordRequired, passwordChangeRequired, quizzesPage, session.token]);
 
   const fetchAnnouncements = useCallback(async () => {
     if (passwordChangeRequired) {
@@ -616,7 +626,6 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
         result = await apiRequest('/teacher/class/overview', {
           token: session.token,
         })
-        console.log('Teacher overview API response:', result)
       } catch (apiErr) {
         if (isPasswordChangeRequiredError(apiErr)) {
           handlePasswordRequired()
@@ -697,16 +706,13 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
   }, [loadOverview, passwordChangeRequired])
 
   useEffect(() => {
-    if (passwordChangeRequired) return
+    if (passwordChangeRequired || activeTab !== 'profile') return
 
     const loadProfile = async () => {
       try {
         const result = await apiRequest('/user/profile', { token: session.token })
-        console.log('[TeacherDashboard] profile response:', result)
         if (result?.first_name || result?.last_name || result?.email) {
           setProfile(result)
-        } else {
-          console.warn('[TeacherDashboard] profile response missing first_name, last_name, and email:', result)
         }
       } catch (err) {
         if (isPasswordChangeRequiredError(err)) {
@@ -718,26 +724,26 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
     }
 
     void loadProfile()
-  }, [handlePasswordRequired, passwordChangeRequired, session])
+  }, [activeTab, handlePasswordRequired, passwordChangeRequired, session])
 
   useEffect(() => {
-    if (passwordChangeRequired) return
+    if (passwordChangeRequired || activeTab !== 'announcements') return
 
     const timer = setTimeout(() => {
       void fetchAnnouncements()
     }, 0)
     return () => clearTimeout(timer)
-  }, [fetchAnnouncements, passwordChangeRequired])
+  }, [activeTab, fetchAnnouncements, passwordChangeRequired])
 
-  // Fetch quizzes when selectedClassId changes
+  // Quiz records are loaded when the teacher opens the quiz section.
   useEffect(() => {
-    if (selectedClassId) {
+    if (selectedClassId && activeTab === 'quizzes') {
       const timer = setTimeout(() => {
-        void fetchQuizzes()
+        void fetchQuizzes(quizzesPage)
       }, 0)
       return () => clearTimeout(timer)
     }
-  }, [selectedClassId, fetchQuizzes])
+  }, [activeTab, fetchQuizzes, quizzesPage, selectedClassId])
 
   const filteredClasses = useMemo(() => {
     if (!overview.classes) return []
@@ -811,23 +817,18 @@ const [editingQuizId, setEditingQuizId] = useState(null); // Tracks if we are ed
   }, [readStorageKey])
 
   const displayQuizResults = completedQuizResults
-  const displayQuizzes = (allQuizzes.length ? allQuizzes : SAMPLE_QUIZZES).map((quiz) => {
+  const displayQuizzes = allQuizzes.map((quiz) => {
     const quizId = quiz.id || quiz._id
     return Object.prototype.hasOwnProperty.call(storedQuizVisibility, quizId)
       ? { ...quiz, is_hidden: storedQuizVisibility[quizId] }
       : quiz
   })
   const quizSubmissionStats = useMemo(() => {
-    const total = displayQuizResults.length
-    const averageScore = total
-      ? displayQuizResults.reduce((sum, result) => sum + (Number(result.score) || 0), 0) / total
-      : 0
-
     return {
-      averageScore,
-      total,
+      averageScore: completedQuizAverageScore,
+      total: completedQuizResultsTotal,
     }
-  }, [displayQuizResults])
+  }, [completedQuizAverageScore, completedQuizResultsTotal])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1448,11 +1449,14 @@ const createAnnouncement = async (event) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQuizTab, editingQuizId, passwordChangeRequired, quizForm, quizQuestions])
 
-  const viewQuizResponses = async (quiz) => {
+  const viewQuizResponses = async (quiz, page = 1) => {
     const quizId = quiz.id || quiz._id
     if (!quizId || String(quizId).startsWith('sample-')) {
       setSelectedResponseQuiz(quiz)
       setCompletedQuizResults([])
+      setCompletedQuizResultsPage(1)
+      setCompletedQuizResultsTotal(0)
+      setCompletedQuizAverageScore(0)
       setActiveQuizTab('recent_submissions')
       return
     }
@@ -1462,14 +1466,19 @@ const createAnnouncement = async (event) => {
       setError('')
       setSelectedResponseQuiz(quiz)
       setCompletedQuizResults([])
+      setCompletedQuizResultsPage(page)
       setActiveQuizTab('recent_submissions')
-      const query = new URLSearchParams({ quiz_id: String(quizId) })
+      const query = new URLSearchParams({ quiz_id: String(quizId), page: String(page), limit: '15' })
       if (selectedClassId) query.set('class_id', String(selectedClassId))
       const result = await apiRequest(`/teacher/quiz/results?${query.toString()}`, {
         token: session.token,
       })
       setSelectedResponseQuiz(normalizeQuiz(result?.quiz) || quiz)
       setCompletedQuizResults(Array.isArray(result?.results) ? result.results : [])
+      const total = result?.pagination?.total ?? result?.results?.length ?? 0
+      setCompletedQuizResultsTotal(total)
+      setCompletedQuizResultsPage(Math.min(page, Math.max(1, Math.ceil(total / 15))))
+      setCompletedQuizAverageScore(Number(result?.summary?.average_score) || 0)
     } catch (err) {
       if (isPasswordChangeRequiredError(err)) {
         handlePasswordRequired()
@@ -1477,6 +1486,8 @@ const createAnnouncement = async (event) => {
       }
       setError(err.message || 'Failed to load quiz responses.')
       setCompletedQuizResults([])
+      setCompletedQuizResultsTotal(0)
+      setCompletedQuizAverageScore(0)
     } finally {
       setLoadingCompletedQuizResults(false)
     }
@@ -1959,6 +1970,7 @@ const createAnnouncement = async (event) => {
             <select 
               value={activeTab} 
               onChange={(e) => setActiveTab(e.target.value)}
+              aria-label="Teacher dashboard section"
               disabled={!selectedClassId && activeTab !== 'profile'}
               className="btn btn-secondary"
               style={{ width: '100%', textAlign: 'left', fontWeight: 'bold' }}
@@ -1973,7 +1985,7 @@ const createAnnouncement = async (event) => {
             </select>
           </div>
 
-          <nav className="tabs desktop-tabs">
+          <nav className="tabs desktop-tabs" aria-label="Teacher dashboard sections">
             <button disabled={!selectedClassId} className={`tab ${activeTab === 'students' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('students')}>Students & Parents</button>
             <button disabled={!selectedClassId} className={`tab ${activeTab === 'parents' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('parents')}>Messages</button>
             <button disabled={!selectedClassId} className={`tab ${activeTab === 'announcements' ? 'active' : ''} ${!selectedClassId ? 'disabled' : ''}`} onClick={() => setActiveTab('announcements')}>Announcements</button>
@@ -2439,7 +2451,7 @@ const createAnnouncement = async (event) => {
                           <p style={{ margin: 0 }}><strong>Lobby Active:</strong> {lastHostedLobby.name}{lastHostedLobby.teacherLobby ? ' (Server-side)' : ''}</p>
                           <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             Lobby ID: <code style={{ userSelect: 'all', fontSize: '1.2rem', padding: '0.2rem 0.5rem', background: '#fff', border: '1px solid #ccc' }}>{lastHostedLobby.publicId}</code>
-                            {/* <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => copyLobbyCode(lastHostedLobby.publicId)}>Copy</button> */}
+                            <button type="button" className="btn btn-secondary btn-small" onClick={() => copyLobbyCode(lastHostedLobby.publicId)}>Copy lobby ID</button>
                           </p>
                           {/* <p style={{ margin: 0, fontSize: '0.85rem', wordBreak: 'break-all' }}>
                             WebSocket: <code>wss://multiplayer-game-backend-production-27bf.up.railway.app/ws/lobby/{lastHostedLobby.publicId}</code>
@@ -2572,6 +2584,7 @@ const createAnnouncement = async (event) => {
                           })}
                         </div>
                       )}
+                      <PaginationControls page={quizzesPage} total={quizzesTotal} limit={15} onPageChange={setQuizzesPage} label="quizzes" />
                     </article>
                   )}
 
@@ -2773,7 +2786,7 @@ const createAnnouncement = async (event) => {
                               <h2>{selectedResponseQuiz.title || 'Quiz'} Responses</h2>
                               <p className="subtitle">Deadline: {selectedResponseQuiz.answer_until ? new Date(selectedResponseQuiz.answer_until).toLocaleString() : 'No deadline'}</p>
                             </div>
-                            <button type="button" className="btn btn-secondary btn-small" onClick={() => viewQuizResponses(selectedResponseQuiz)} disabled={loadingCompletedQuizResults}>
+                            <button type="button" className="btn btn-secondary btn-small" onClick={() => viewQuizResponses(selectedResponseQuiz, completedQuizResultsPage)} disabled={loadingCompletedQuizResults}>
                               {loadingCompletedQuizResults ? 'Refreshing...' : 'Refresh'}
                             </button>
                           </div>
@@ -2783,6 +2796,14 @@ const createAnnouncement = async (event) => {
                             <div className="metric-card"><p>Average Score</p><h3>{quizSubmissionStats.averageScore.toFixed(1)}%</h3></div>
                             <div className="metric-card"><p>Quiz Deadline</p><h3>{selectedResponseQuiz.answer_until ? new Date(selectedResponseQuiz.answer_until).toLocaleDateString() : 'None'}</h3></div>
                           </div>
+                          <PaginationControls
+                            page={completedQuizResultsPage}
+                            total={completedQuizResultsTotal}
+                            limit={15}
+                            onPageChange={(page) => void viewQuizResponses(selectedResponseQuiz, page)}
+                            disabled={loadingCompletedQuizResults}
+                            label="submissions"
+                          />
 
                           {loadingCompletedQuizResults ? <p className="info-text">Loading results...</p> : displayQuizResults.length === 0 ? <p className="info-text">No submissions for this quiz yet.</p> : (
                         <div className="submission-grid">

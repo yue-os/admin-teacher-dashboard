@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import DashboardShell from '../components/DashboardShell'
 import Loading from '../components/Loading'
+import PaginationControls from '../components/PaginationControls'
 import { getParentStats, linkChild, unlinkChild, deleteParentMessage, apiRequest } from '../lib/api'
 import { saveSession } from '../lib/auth'
 import PasswordStrengthMeter from '../components/PasswordStrengthMeter'
@@ -76,6 +77,12 @@ function ParentDashboard({ session, onLogout }) {
   const [connectionCode, setConnectionCode] = useState('')
   const [linking, setLinking] = useState(false)
   const [selectedChildUsername, setSelectedChildUsername] = useState('')
+  const [playtimePage, setPlaytimePage] = useState(1)
+  const [missionPage, setMissionPage] = useState(1)
+  const [pagedPlaytimeLogs, setPagedPlaytimeLogs] = useState([])
+  const [pagedMissionRows, setPagedMissionRows] = useState([])
+  const [playtimeLoading, setPlaytimeLoading] = useState(false)
+  const [missionLoading, setMissionLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
   const [parentInsightModal, setParentInsightModal] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -110,9 +117,7 @@ function ParentDashboard({ session, onLogout }) {
       setLoading(true)
       const result = await getParentStats(session.token)
       setChildrenStats(Array.isArray(result) ? result : [])
-      if (!selectedChildUsername && result?.length) {
-        setSelectedChildUsername(result[0].child)
-      }
+      setSelectedChildUsername((current) => current || result?.[0]?.child || '')
     } catch (err) {
       if (err.status === 401) {
         onLogout()
@@ -122,7 +127,7 @@ function ParentDashboard({ session, onLogout }) {
     } finally {
       setLoading(false)
     }
-  }, [onLogout, selectedChildUsername, session])
+  }, [onLogout, session.token])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -132,22 +137,21 @@ function ParentDashboard({ session, onLogout }) {
   }, [loadStats])
 
   useEffect(() => {
+    if (activeTab !== 'profile') return
     const loadProfile = async () => {
       try {
         const result = await apiRequest('/user/profile', { token: session.token })
-        console.log('[ParentDashboard] profile response:', result)
         if (result?.first_name || result?.last_name || result?.email) {
           setProfile(result)
-        } else {
-          console.warn('[ParentDashboard] profile response missing first_name, last_name, and email:', result)
         }
       } catch (err) {
-        console.error('[ParentDashboard] profile load failed:', err)
+        if (err.status === 401) onLogout()
+        else setError(err.message || 'Unable to load profile information.')
       }
     }
 
     void loadProfile()
-  }, [session])
+  }, [activeTab, onLogout, session])
 
   const fetchMessages = useCallback(async () => {
     try {
@@ -157,12 +161,13 @@ function ParentDashboard({ session, onLogout }) {
       })
       setMessages(Array.isArray(result) ? result : [])
     } catch (err) {
-      console.error("Inbox sync failed", err)
+      if (err.status === 401) onLogout()
+      else setError(err.message || 'Unable to refresh messages.')
     }
-  }, [session.token])
+  }, [onLogout, session.token])
 
   useEffect(() => {
-    if (activeTab === 'messages' || activeTab === 'overview') {
+    if (activeTab === 'messages') {
       const timer = setTimeout(() => {
         void fetchMessages()
       }, 0)
@@ -178,6 +183,47 @@ function ParentDashboard({ session, onLogout }) {
     () => childrenStats.find((child) => child.child === selectedChildUsername) || childrenStats[0] || null,
     [childrenStats, selectedChildUsername],
   )
+
+  useEffect(() => {
+    if (!selectedChild || activeTab !== 'overview') return undefined
+    let cancelled = false
+    const loadPage = async (kind, page, setRows, setBusy) => {
+      if (page === 1) {
+        setRows(kind === 'playtime' ? selectedChild.playtime_logs || [] : selectedChild.missions || [])
+        setBusy(false)
+        return
+      }
+      setBusy(true)
+      try {
+        const query = new URLSearchParams({
+          child_id: String(selectedChild.child_id),
+          kind,
+          page: String(page),
+          limit: '15',
+        })
+        const result = await apiRequest(`/parent/stats/records?${query.toString()}`, { token: session.token })
+        if (!cancelled) setRows(Array.isArray(result?.items) ? result.items : [])
+      } catch (err) {
+        if (!cancelled) {
+          if (err.status === 401) onLogout()
+          else setError(err.message || 'Unable to load records.')
+        }
+      } finally {
+        if (!cancelled) setBusy(false)
+      }
+    }
+    const timer = window.setTimeout(() => {
+      void loadPage('playtime', playtimePage, setPagedPlaytimeLogs, setPlaytimeLoading)
+      void loadPage('missions', missionPage, setPagedMissionRows, setMissionLoading)
+    }, 0)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [activeTab, missionPage, onLogout, playtimePage, selectedChild, session.token])
+
+  const selectedPlaytimeLogs = playtimePage === 1 ? selectedChild?.playtime_logs || [] : pagedPlaytimeLogs
+  const selectedMissionRows = missionPage === 1 ? selectedChild?.missions || [] : pagedMissionRows
 
   // Group messages into unique conversations for the sidebar
   const conversations = useMemo(() => {
@@ -282,16 +328,15 @@ function ParentDashboard({ session, onLogout }) {
 
   const summaryCards = useMemo(() => {
     const totalChildren = childrenStats.length
-    const scores = childrenStats.flatMap((child) => child.scores || [])
-    const scoreValues = scores
-      .map((score) => Number(score.score ?? score.quiz_score ?? score.value))
-      .filter((score) => Number.isFinite(score))
-    const averageScore = scoreValues.length
-      ? `${(scoreValues.reduce((sum, score) => sum + score, 0) / scoreValues.length).toFixed(1)}%`
+    const scoreCount = childrenStats.reduce((sum, child) => sum + Number(child.scores_count || 0), 0)
+    const weightedScore = childrenStats.reduce((sum, child) => sum + (Number(child.quiz_avg_score || 0) * Number(child.scores_count || 0)), 0)
+    const averageScore = scoreCount
+      ? `${(weightedScore / scoreCount).toFixed(1)}%`
       : '0%'
-    const completedTasks = scores.filter((score) => String(score.status || '').toLowerCase().includes('complete')).length
-    const pendingTasks = Math.max(0, scores.length - completedTasks)
-    const completionRate = scores.length ? `${Math.round((completedTasks / scores.length) * 100)}%` : '0%'
+    const completedTasks = childrenStats.reduce((sum, child) => sum + Number(child.missions_completed_count || 0), 0)
+    const totalTasks = childrenStats.reduce((sum, child) => sum + Number(child.missions_count || 0), 0)
+    const pendingTasks = Math.max(0, totalTasks - completedTasks)
+    const completionRate = totalTasks ? `${Math.round((completedTasks / totalTasks) * 100)}%` : '0%'
     const recentActivityCount = childrenStats.reduce(
       (count, child) => count + (child.playtime_logs?.slice(0, 2).length || 0) + (child.scores?.slice(0, 2).length || 0),
       0,
@@ -312,12 +357,15 @@ function ParentDashboard({ session, onLogout }) {
         childName: child.child,
       })),
     )
-    const completedTasks = scores.filter((score) => String(score.status || '').toLowerCase().includes('complete'))
-    const pendingTasks = scores.filter((score) => !String(score.status || '').toLowerCase().includes('complete'))
+    const tasks = childrenStats.flatMap((child) =>
+      (child.missions || []).map((mission) => ({ ...mission, childName: child.child })),
+    )
+    const completedTasks = tasks.filter((task) => String(task.status || '').toLowerCase().includes('complete'))
+    const pendingTasks = tasks.filter((task) => !String(task.status || '').toLowerCase().includes('complete'))
     const recentActivity = childrenStats.flatMap((child) => [
       ...(child.scores || []).slice(0, 3).map((score) => ({
         type: 'Score',
-        title: score.mission_id || score.quiz_title || 'Learning activity',
+        title: score.quiz_title || score.mission_id || (score.quiz_id ? `Quiz ${score.quiz_id}` : 'Learning activity'),
         detail: `${child.child} • ${score.score ?? 'No score'}${score.status ? ` • ${score.status}` : ''}`,
       })),
       ...(child.playtime_logs || []).slice(0, 3).map((log) => ({
@@ -386,6 +434,8 @@ function ParentDashboard({ session, onLogout }) {
       if (selectedChildUsername === username) {
         setSelectedChildUsername('')
       }
+      setPlaytimePage(1)
+      setMissionPage(1)
       setSuccessMessage(`Unlinked ${username} successfully.`)
       await loadStats()
       setTimeout(() => setSuccessMessage(''), 3000)
@@ -540,6 +590,7 @@ function ParentDashboard({ session, onLogout }) {
             <select 
               value={activeTab} 
               onChange={(e) => setActiveTab(e.target.value)}
+              aria-label="Parent dashboard section"
               className="btn btn-secondary"
               style={{ width: '100%', textAlign: 'left', fontWeight: 'bold' }}
             >
@@ -549,7 +600,7 @@ function ParentDashboard({ session, onLogout }) {
             </select>
           </div>
 
-          <nav className="tabs parent-tabs desktop-tabs">
+          <nav className="tabs parent-tabs desktop-tabs" aria-label="Parent dashboard sections">
             <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
             <button className={`tab ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => setActiveTab('messages')}>Teacher Messages</button>
           </nav>
@@ -589,7 +640,7 @@ function ParentDashboard({ session, onLogout }) {
                       {childrenStats.map((child) => (
                         <article key={child.child_public_id || child.child} className="profile-child-card">
                           <strong>{child.child}</strong>
-                          <span>{child.playtime_logs?.length || 0} play logs</span>
+                          <span>{child.playtime_logs_count || 0} play logs</span>
                         </article>
                       ))}
                     </div>
@@ -803,13 +854,17 @@ function ParentDashboard({ session, onLogout }) {
                       key={child.child_public_id || child.child}
                       type="button"
                       className={`linked-child-card ${selectedChildUsername === child.child ? 'active' : ''}`}
-                      onClick={() => setSelectedChildUsername(child.child)}
+                      onClick={() => {
+                        setSelectedChildUsername(child.child)
+                        setPlaytimePage(1)
+                        setMissionPage(1)
+                      }}
                     >
                       <div>
                         <strong>{child.child}</strong>
                         <p>{child.child_public_id}</p>
                       </div>
-                      <span className="badge">{child.playtime_logs?.length || 0} logs</span>
+                      <span className="badge">{child.playtime_logs_count || 0} logs</span>
                     </button>
                   ))}
                 </div>
@@ -849,11 +904,11 @@ function ParentDashboard({ session, onLogout }) {
                     <div className="cards-grid compact selected-child-metrics">
                       <article className="metric-card">
                         <p>Playtime Logs</p>
-                        <h3>{selectedChild.playtime_logs?.length || 0}</h3>
+                        <h3>{selectedChild.playtime_logs_count || 0}</h3>
                       </article>
                       <article className="metric-card">
                         <p>Scores</p>
-                        <h3>{selectedChild.scores?.length || 0}</h3>
+                        <h3>{selectedChild.scores_count || 0}</h3>
                       </article>
                     </div>
                     <button className="btn btn-secondary" type="button" onClick={() => handleUnlinkChild(selectedChild.child)}>
@@ -870,25 +925,28 @@ function ParentDashboard({ session, onLogout }) {
           <section className="parent-record-grid">
             <article className="panel">
               <h2>Playtime Logs</h2>
-              {selectedChild?.playtime_logs?.length ? (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Minutes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedChild.playtime_logs.map((log, index) => (
-                        <tr key={`${log.date}-${index}`}>
-                          <td>{log.date}</td>
-                          <td>{log.minutes}</td>
+              {selectedChild?.playtime_logs_count ? (
+                <>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Minutes</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {selectedPlaytimeLogs.map((log, index) => (
+                          <tr key={`${log.date}-${index}`}>
+                            <td>{log.date}</td>
+                            <td>{log.minutes}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <PaginationControls page={playtimePage} total={selectedChild.playtime_logs_count || 0} limit={15} onPageChange={setPlaytimePage} disabled={playtimeLoading} label="playtime records" />
+                </>
               ) : (
                 <p className="info-text">No playtime records for the selected child.</p>
               )}
@@ -896,27 +954,30 @@ function ParentDashboard({ session, onLogout }) {
 
             <article className="panel">
               <h2>Mission Scores</h2>
-              {selectedChild?.scores?.length ? (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Mission</th>
-                        <th>Status</th>
-                        <th>Score</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedChild.scores.map((score, index) => (
-                        <tr key={`${score.mission_id}-${index}`}>
-                          <td>{score.mission_id}</td>
-                          <td>{score.status}</td>
-                          <td>{score.score}</td>
+              {selectedChild?.missions_count ? (
+                <>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Mission</th>
+                          <th>Status</th>
+                          <th>Score</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {selectedMissionRows.map((score, index) => (
+                          <tr key={score.public_id || `${score.mission_id}-${index}`}>
+                            <td>{score.mission_id}</td>
+                            <td>{score.status}</td>
+                            <td>{score.score}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <PaginationControls page={missionPage} total={selectedChild.missions_count || 0} limit={15} onPageChange={setMissionPage} disabled={missionLoading} label="mission records" />
+                </>
               ) : (
                 <p className="info-text">No mission records for the selected child.</p>
               )}
@@ -946,8 +1007,8 @@ function ParentDashboard({ session, onLogout }) {
                     <p className="info-text">No children linked yet.</p>
                   ) : (
                     childrenStats.map((child) => {
-                      const totalTasks = child.scores?.length || 0
-                      const completedTasks = (child.scores || []).filter((score) => String(score.status || '').toLowerCase().includes('complete')).length
+                      const totalTasks = child.missions_count || 0
+                      const completedTasks = child.missions_completed_count || 0
                       return (
                         <article key={child.child_public_id || child.child} className="parent-insight-row">
                           <div>
@@ -977,7 +1038,7 @@ function ParentDashboard({ session, onLogout }) {
                     parentInsights.scores.slice(0, 10).map((score, index) => (
                       <article key={`${score.childName}-${score.mission_id || score.quiz_title || index}`} className="parent-insight-row">
                         <div>
-                          <strong>{score.quiz_title || score.mission_id || 'Learning activity'}</strong>
+                      <strong>{score.quiz_title || score.mission_id || (score.quiz_id ? `Quiz ${score.quiz_id}` : 'Learning activity')}</strong>
                           <span>{score.childName}{score.status ? ` • ${score.status}` : ''}</span>
                         </div>
                         <em>{score.score ?? 'No score'}</em>
@@ -992,8 +1053,8 @@ function ParentDashboard({ session, onLogout }) {
               <>
                 <div className="analytics-modal-head">
                   <span>Completion Rate</span>
-                  <h2>Completed and Pending Tasks</h2>
-                  <p>A simple view of what is done and what still needs attention.</p>
+                  <h2>Recent Completed and Pending Tasks</h2>
+                  <p>The latest task records from linked children.</p>
                 </div>
                 <div className="parent-task-grid">
                   <article>

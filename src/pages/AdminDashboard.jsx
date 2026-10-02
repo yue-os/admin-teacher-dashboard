@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, Cart
 import DashboardShell from '../components/DashboardShell'
 import Loading from '../components/Loading'
 import AdminActivityLog from '../components/AdminActivityLog'
+import PaginationControls from '../components/PaginationControls'
 import PasswordStrengthMeter from '../components/PasswordStrengthMeter'
 import { apiRequest } from '../lib/api'
 import { isPasswordCompliant, PASSWORD_POLICY_ERROR } from '../lib/passwordPolicy'
@@ -17,13 +18,29 @@ const USER_TEMPLATE = {
 }
 
 function AdminDashboard({ session, onLogout }) {
+  const PAGE_SIZE = 15
   const [activeTab, setActiveTab] = useState('analytics')
+  const changeTab = (tab) => setActiveTab(tab)
   const [analytics, setAnalytics] = useState(null)
   const [users, setUsers] = useState([])
   const [classes, setClasses] = useState([])
   const [teachers, setTeachers] = useState([])
   const [passwordResetRequests, setPasswordResetRequests] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [sectionLoading, setSectionLoading] = useState(true)
+  const [usersPage, setUsersPage] = useState(1)
+  const [usersTotal, setUsersTotal] = useState(0)
+  const [classesPage, setClassesPage] = useState(1)
+  const [classesTotal, setClassesTotal] = useState(0)
+  const [resetPage, setResetPage] = useState(1)
+  const [resetTotal, setResetTotal] = useState(0)
+  const [pickerStudents, setPickerStudents] = useState([])
+  const [pickerPage, setPickerPage] = useState(1)
+  const [pickerTotal, setPickerTotal] = useState(0)
+  const [pickerLoading, setPickerLoading] = useState(false)
+  const [classRoster, setClassRoster] = useState([])
+  const [classRosterPage, setClassRosterPage] = useState(1)
+  const [classRosterTotal, setClassRosterTotal] = useState(0)
+  const [classRosterLoading, setClassRosterLoading] = useState(false)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [createdCredentials, setCreatedCredentials] = useState(null)
@@ -60,27 +77,6 @@ function AdminDashboard({ session, onLogout }) {
   const [studentFilterSection, setStudentFilterSection] = useState('')
   const [studentFilterName, setStudentFilterName] = useState('')
 
-  const filteredStudents = useMemo(() => {
-    const isFiltering = studentFilterGrade.trim() !== '' || studentFilterSection.trim() !== '' || studentFilterName.trim() !== '';
-
-    return users
-      .filter((u) => u.role === 'Student')
-      .filter((u) => {
-        if (!isFiltering) {
-          return !u.class_id;
-        }
-        let matches = true;
-        if (studentFilterGrade.trim()) matches = matches && (u.class_name || '').toLowerCase().includes(studentFilterGrade.toLowerCase());
-        if (studentFilterSection.trim()) matches = matches && (u.class_name || '').toLowerCase().includes(studentFilterSection.toLowerCase());
-        if (studentFilterName.trim()) {
-          const fullName = `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase();
-          matches = matches && fullName.includes(studentFilterName.toLowerCase());
-        }
-        return matches;
-      })
-      .sort((a, b) => `${a.first_name || ''} ${a.last_name || ''}`.localeCompare(`${b.first_name || ''} ${b.last_name || ''}`))
-  }, [users, studentFilterGrade, studentFilterSection, studentFilterName])
-
   const fetchAnalytics = useCallback(async () => {
     const result = await apiRequest('/api/admin/dashboard/analytics', {
       token: session.token,
@@ -88,84 +84,145 @@ function AdminDashboard({ session, onLogout }) {
     setAnalytics(result)
   }, [session.token])
 
-  const fetchUsers = useCallback(async () => {
-    const result = await apiRequest('/api/admin/users', {
+  const fetchUsers = useCallback(async (page = usersPage) => {
+    const query = new URLSearchParams({
+      page: String(page),
+      limit: String(PAGE_SIZE),
+      search: userSearch.trim(),
+      role: roleFilter,
+    })
+    const result = await apiRequest(`/api/admin/users?${query.toString()}`, {
       token: session.token,
     })
-    console.log('[AdminDashboard] users response:', result)
-    setUsers(result)
-    const teacherList = result.filter((u) => u.role === 'Teacher')
-    setTeachers(teacherList)
-  }, [session.token])
+    const rows = Array.isArray(result?.users) ? result.users : Array.isArray(result) ? result : []
+    const total = result?.pagination?.total ?? rows.length
+    setUsers(rows)
+    setUsersTotal(total)
+    setUsersPage(Math.min(page, Math.max(1, Math.ceil(total / PAGE_SIZE))))
+  }, [PAGE_SIZE, roleFilter, session.token, userSearch, usersPage])
 
-  const fetchClasses = useCallback(async () => {
+  const fetchTeachers = useCallback(async () => {
+    const query = new URLSearchParams({ page: '1', limit: String(PAGE_SIZE), role: 'Teacher' })
+    const result = await apiRequest(`/api/admin/users?${query.toString()}`, { token: session.token })
+    setTeachers(Array.isArray(result?.users) ? result.users : [])
+  }, [PAGE_SIZE, session.token])
+
+  const fetchClasses = useCallback(async (page = classesPage) => {
+    const query = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
+    const result = await apiRequest(`/api/admin/classes?${query.toString()}`, { token: session.token })
+    const rows = Array.isArray(result?.classes) ? result.classes : Array.isArray(result) ? result : []
+    const total = result?.pagination?.total ?? rows.length
+    setClasses(rows)
+    setClassesTotal(total)
+    setClassesPage(Math.min(page, Math.max(1, Math.ceil(total / PAGE_SIZE))))
+  }, [PAGE_SIZE, session.token, classesPage])
+
+  const fetchAssignmentStudents = useCallback(async (page = pickerPage, unassigned = true) => {
+    setPickerLoading(true)
     try {
-      const result = await apiRequest('/api/admin/classes', {
-        token: session.token,
-      });
-      
-      console.log("Classes API Result:", result); // Check your browser console!
-
-      // If result is the array:
-      setClasses(Array.isArray(result) ? result : result.classes || []);
-      
-      // If your API returns { status: 'success', data: [...] }, use:
-      // setClasses(result.data || []);
-
-    } catch (err) {
-      console.error("Fetch Classes Error:", err);
+      const hasFilter = Boolean(studentFilterGrade.trim() || studentFilterSection.trim() || studentFilterName.trim())
+      const query = new URLSearchParams({
+        page: String(page),
+        limit: String(PAGE_SIZE),
+        name: studentFilterName.trim(),
+        grade: studentFilterGrade.trim(),
+        section: studentFilterSection.trim(),
+        unassigned: String(unassigned && !hasFilter),
+      })
+      const result = await apiRequest(`/api/admin/class-assignment/students?${query.toString()}`, { token: session.token })
+      const rows = Array.isArray(result?.students) ? result.students : []
+      setPickerStudents(rows)
+      const total = result?.pagination?.total ?? rows.length
+      setPickerTotal(total)
+      setPickerPage(Math.min(page, Math.max(1, Math.ceil(total / PAGE_SIZE))))
+    } finally {
+      setPickerLoading(false)
     }
-  }, [session.token]);
+  }, [PAGE_SIZE, pickerPage, session.token, studentFilterGrade, studentFilterName, studentFilterSection])
 
-  const fetchPasswordResetRequests = useCallback(async () => {
-    const result = await apiRequest('/api/admin/password-reset-requests', {
+  const fetchClassRoster = useCallback(async (classId, page = classRosterPage) => {
+    if (!classId) return
+    setClassRosterLoading(true)
+    try {
+      const query = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
+      const result = await apiRequest(`/api/admin/classes/${classId}/students?${query.toString()}`, { token: session.token })
+      setClassRoster(Array.isArray(result?.students) ? result.students : [])
+      const total = result?.pagination?.total ?? 0
+      setClassRosterTotal(total)
+      setClassRosterPage(Math.min(page, Math.max(1, Math.ceil(total / PAGE_SIZE))))
+    } finally {
+      setClassRosterLoading(false)
+    }
+  }, [PAGE_SIZE, classRosterPage, session.token])
+
+  const fetchPasswordResetRequests = useCallback(async (page = resetPage) => {
+    const query = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
+    const result = await apiRequest(`/api/admin/password-reset-requests?${query.toString()}`, {
       token: session.token,
     })
     setPasswordResetRequests(Array.isArray(result?.requests) ? result.requests : [])
-  }, [session.token])
+    const total = result?.pagination?.total ?? result?.requests?.length ?? 0
+    setResetTotal(total)
+    setResetPage(Math.min(page, Math.max(1, Math.ceil(total / PAGE_SIZE))))
+  }, [PAGE_SIZE, resetPage, session.token])
 
-  const loadData = useCallback(async () => {
-    try {
+  useEffect(() => {
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      if (cancelled) return
+      setSectionLoading(true)
       setError('')
-      setLoading(true)
-      await Promise.all([fetchAnalytics(), fetchUsers(), fetchClasses(), fetchPasswordResetRequests()])
-    } catch (err) {
-      if (err.status === 401) {
-        onLogout()
-        return
+      try {
+        if (activeTab === 'analytics') await fetchAnalytics()
+        if (activeTab === 'users') await fetchUsers(usersPage)
+        if (activeTab === 'classes') {
+          await Promise.all([fetchClasses(classesPage), fetchTeachers()])
+        }
+        if (activeTab === 'password-resets') await fetchPasswordResetRequests(resetPage)
+      } catch (err) {
+        if (err.status === 401) onLogout()
+        else if (!cancelled) setError(err.message || 'Unable to load this section.')
+      } finally {
+        if (!cancelled) setSectionLoading(false)
       }
-      setError(err.message)
-    } finally {
-      setLoading(false)
+    }, activeTab === 'users' ? 250 : 0)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
     }
-  }, [fetchAnalytics, fetchUsers, fetchClasses, fetchPasswordResetRequests, onLogout])
+  }, [activeTab, classesPage, fetchAnalytics, fetchClasses, fetchPasswordResetRequests, fetchTeachers, fetchUsers, onLogout, resetPage, usersPage])
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void loadData()
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [loadData])
+    if (activeTab !== 'classes') return undefined
+    const timer = window.setTimeout(() => {
+      fetchAssignmentStudents(pickerPage, !isViewModalOpen).catch((err) => {
+        if (err.status === 401) onLogout()
+        else setError(err.message || 'Unable to load students.')
+      })
+    }, 200)
+    return () => window.clearTimeout(timer)
+  }, [activeTab, fetchAssignmentStudents, isViewModalOpen, onLogout, pickerPage])
 
-  // Auto-refresh analytics in the background every 10 seconds
+  // Keep analytics fresh only while its section is open.
   useEffect(() => {
+    if (activeTab !== 'analytics') return undefined
     const interval = setInterval(() => {
-      fetchAnalytics().catch((err) => console.error("Background analytics refresh failed", err))
+      fetchAnalytics().catch((err) => setError(err.message || 'Unable to refresh analytics.'))
     }, 10000)
     return () => clearInterval(interval)
-  }, [fetchAnalytics])
+  }, [activeTab, fetchAnalytics])
 
   const summary = analytics?.summary
   const userCounts = useMemo(() => {
-    return users.reduce(
-      (counts, user) => {
-        counts.total += 1
-        counts[user.role] = (counts[user.role] || 0) + 1
-        return counts
-      },
-      { total: 0, Admin: 0, Teacher: 0, Parent: 0, Student: 0 },
-    )
-  }, [users])
+    const counts = analytics?.summary?.role_counts || {}
+    return {
+      total: Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0),
+      Admin: Number(counts.Admin || 0),
+      Teacher: Number(counts.Teacher || 0),
+      Parent: Number(counts.Parent || 0),
+      Student: Number(counts.Student || analytics?.summary?.total_students || 0),
+    }
+  }, [analytics])
 
   const activeUsers = useMemo(() => {
     const onlineUsers = users.filter((user) => (
@@ -322,13 +379,11 @@ function AdminDashboard({ session, onLogout }) {
         })
         setSuccessMessage('User updated successfully!')
       } else {
-        console.log('[AdminDashboard] create user payload:', payload)
         const created = await apiRequest('/api/admin/users', {
           method: 'POST',
           token: session.token,
           body: payload,
         })
-        console.log('[AdminDashboard] create user response:', created)
         if (created?.credentials) {
           setCreatedCredentials({
             fullName: `${created.first_name || ''} ${created.last_name || ''}`.trim(),
@@ -602,9 +657,8 @@ function AdminDashboard({ session, onLogout }) {
       if (event.target.querySelector('input[type="file"]')) {
         event.target.querySelector('input[type="file"]').value = ''
       }
-      await fetchUsers()
       if (createdCount > 0 && errorCount === 0) {
-        setActiveTab('users')
+        changeTab('users')
       }
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
@@ -664,15 +718,11 @@ function AdminDashboard({ session, onLogout }) {
         student_ids: selectedStudentIds,
       }
 
-      console.log('[AdminDashboard] create class payload:', payload)
-
-      const result = await apiRequest('/api/admin/classes', {
+      await apiRequest('/api/admin/classes', {
         method: 'POST',
         token: session.token,
         body: payload,
       })
-      console.log('[AdminDashboard] create class response:', result)
-
       setSuccessMessage(
         `Class "${className}" assigned to teacher successfully${selectedStudentIds.length ? ` with ${selectedStudentIds.length} student(s)` : ''}.`
       )
@@ -685,7 +735,8 @@ function AdminDashboard({ session, onLogout }) {
         student_ids: [],
       })
       setSelectedStudentsForClass({})
-      await Promise.all([fetchClasses(), fetchUsers()])
+      setClassesPage(1)
+      await fetchClasses(1)
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
       if (err.status === 401) {
@@ -762,8 +813,7 @@ function AdminDashboard({ session, onLogout }) {
       setSuccessMessage('Class updated successfully!')
       setIsViewModalOpen(false)
 
-      // Refresh all data from server to ensure sync
-      await loadData()
+      await Promise.all([fetchClasses(classesPage), fetchAssignmentStudents(pickerPage)])
     } catch (err) {
       if (err.status === 401) {
         onLogout()
@@ -774,6 +824,36 @@ function AdminDashboard({ session, onLogout }) {
       setSaving(false)
     }
   }
+
+  const openClassEditor = async (classroom) => {
+    const classId = classroom.id || classroom._id
+    setViewingClass(classroom)
+    setClassRosterPage(1)
+    setPickerPage(1)
+    setPickerLoading(true)
+    setError('')
+    try {
+      const result = await apiRequest(`/api/admin/classes/${classId}/student-ids`, { token: session.token })
+      const initialSelection = Object.fromEntries((result?.student_ids || []).map((id) => [id, true]))
+      setSelectedStudentsForClass(initialSelection)
+      setIsViewModalOpen(true)
+    } catch (err) {
+      setPickerLoading(false)
+      if (err.status === 401) onLogout()
+      else setError(err.message || 'Unable to load this class.')
+    }
+  }
+
+  useEffect(() => {
+    if (!isViewModalOpen || !viewingClass) return
+    const timer = window.setTimeout(() => {
+      void fetchClassRoster(viewingClass.id || viewingClass._id, classRosterPage).catch((err) => {
+        if (err.status === 401) onLogout()
+        else setError(err.message || 'Unable to load class members.')
+      })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [classRosterPage, fetchClassRoster, isViewModalOpen, onLogout, viewingClass])
 
   const formatUserClasses = useCallback((user) => {
     if (user.role === 'Teacher') {
@@ -795,28 +875,8 @@ function AdminDashboard({ session, onLogout }) {
     return '-'
   }, [classes])
 
-  const filteredUsers = useMemo(() => {
-    const query = userSearch.trim().toLowerCase()
-
-    return users.filter((user) => {
-      const matchesRole = roleFilter === 'All' || user.role === roleFilter
-      if (!matchesRole) return false
-
-      if (!query) return true
-
-      return [
-        user.first_name,
-        user.last_name,
-        user.email,
-        user.username,
-        user.role,
-        formatUserClasses(user),
-      ]
-        .join(' ')
-        .toLowerCase()
-        .includes(query)
-    })
-  }, [formatUserClasses, roleFilter, userSearch, users])
+  const filteredUsers = users
+  const filteredStudents = pickerStudents
 
 
 
@@ -842,7 +902,9 @@ function AdminDashboard({ session, onLogout }) {
       })
 
       setSuccessMessage('Class deleted successfully!')
-      await loadData()
+      const nextPage = Math.min(classesPage, Math.max(1, Math.ceil((classesTotal - 1) / PAGE_SIZE)))
+      setClassesPage(nextPage)
+      await fetchClasses(nextPage)
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
       if (err.status === 401) {
@@ -865,14 +927,12 @@ function AdminDashboard({ session, onLogout }) {
       {successMessage && <p className="success-text panel" role="status">{successMessage}</p>}
 
 
-      {loading ? (
-        <Loading message="Fetching administrative data..." />
-      ) : (
-        <>
+      <>
           <div className="mobile-tab-switcher">
             <select 
               value={activeTab} 
-              onChange={(e) => setActiveTab(e.target.value)}
+              onChange={(e) => changeTab(e.target.value)}
+              aria-label="Admin dashboard section"
               className="btn btn-secondary"
               style={{ width: '100%', textAlign: 'left', fontWeight: 'bold' }}
             >
@@ -885,45 +945,47 @@ function AdminDashboard({ session, onLogout }) {
             </select>
           </div>
 
-          <nav className="tabs desktop-tabs">
+          <nav className="tabs desktop-tabs" aria-label="Admin dashboard sections">
             <button
               className={`tab ${activeTab === 'analytics' ? 'active' : ''}`}
-              onClick={() => setActiveTab('analytics')}
+              onClick={() => changeTab('analytics')}
             >
               Analytics
             </button>
             <button
               className={`tab ${activeTab === 'users' ? 'active' : ''}`}
-              onClick={() => setActiveTab('users')}
+              onClick={() => changeTab('users')}
             >
               User Management
             </button>
             <button
               className={`tab ${activeTab === 'csv' ? 'active' : ''}`}
-              onClick={() => setActiveTab('csv')}
+              onClick={() => changeTab('csv')}
             >
               Bulk Upload (CSV)
             </button>
             <button
               className={`tab ${activeTab === 'classes' ? 'active' : ''}`}
-              onClick={() => setActiveTab('classes')}
+              onClick={() => changeTab('classes')}
             >
               Class Management
             </button>
             <button
               className={`tab ${activeTab === 'password-resets' ? 'active' : ''}`}
-              onClick={() => setActiveTab('password-resets')}
+              onClick={() => changeTab('password-resets')}
             >
               Password Resets
             </button>
             <button
               className={`tab ${activeTab === 'activity' ? 'active' : ''}`}
-              onClick={() => setActiveTab('activity')}
+              onClick={() => changeTab('activity')}
             >
               Activity Log
             </button>
           </nav>
 
+          {sectionLoading ? <Loading message={`Loading ${activeTab.replace('-', ' ')}...`} /> : (
+          <>
           {activeTab === 'analytics' && (
             <div className="analytics-dashboard">
               <div className="analytics-toolbar">
@@ -1114,7 +1176,7 @@ function AdminDashboard({ session, onLogout }) {
                   <div>
                     <h2>Users</h2>
                     <p className="subtitle">
-                      Showing {filteredUsers.length} of {users.length} accounts.
+                      {usersTotal} accounts match these filters. Showing 15 per page.
                     </p>
                   </div>
 
@@ -1123,13 +1185,19 @@ function AdminDashboard({ session, onLogout }) {
                       Search
                       <input
                         value={userSearch}
-                        onChange={(event) => setUserSearch(event.target.value)}
+                        onChange={(event) => {
+                          setUsersPage(1)
+                          setUserSearch(event.target.value)
+                        }}
                         placeholder="Name, email, class..."
                       />
                     </label>
                     <label className="field compact-field">
                       Role
-                      <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
+                      <select value={roleFilter} onChange={(event) => {
+                        setUsersPage(1)
+                        setRoleFilter(event.target.value)
+                      }}>
                         <option value="All">All roles</option>
                         <option value="Student">Students</option>
                         <option value="Teacher">Teachers</option>
@@ -1195,6 +1263,7 @@ function AdminDashboard({ session, onLogout }) {
                     </tbody>
                   </table>
                 </div>
+                <PaginationControls page={usersPage} total={usersTotal} limit={PAGE_SIZE} onPageChange={setUsersPage} label="accounts" />
               </article>
             </>
           )}
@@ -1206,7 +1275,7 @@ function AdminDashboard({ session, onLogout }) {
                   <h2>Password Reset Activity</h2>
                   <p className="subtitle">Reset links are emailed automatically and expire after 30 minutes.</p>
                 </div>
-                <button className="btn btn-secondary" type="button" onClick={fetchPasswordResetRequests}>
+                <button className="btn btn-secondary" type="button" onClick={() => fetchPasswordResetRequests(resetPage)}>
                   Refresh
                 </button>
               </div>
@@ -1271,6 +1340,7 @@ function AdminDashboard({ session, onLogout }) {
                   </tbody>
                 </table>
               </div>
+              <PaginationControls page={resetPage} total={resetTotal} limit={PAGE_SIZE} onPageChange={setResetPage} label="requests" />
             </section>
           )}
 
@@ -1405,7 +1475,7 @@ function AdminDashboard({ session, onLogout }) {
                           type="text"
                           placeholder="Search first or last name..."
                           value={studentFilterName}
-                          onChange={(e) => setStudentFilterName(e.target.value)}
+                          onChange={(e) => { setPickerPage(1); setStudentFilterName(e.target.value) }}
                         />
                       </label>
                       <label className="field">
@@ -1414,7 +1484,7 @@ function AdminDashboard({ session, onLogout }) {
                           type="text"
                           placeholder="Type class..."
                           value={studentFilterGrade}
-                          onChange={(e) => setStudentFilterGrade(e.target.value)}
+                          onChange={(e) => { setPickerPage(1); setStudentFilterGrade(e.target.value) }}
                         />
                       </label>
                       <label className="field">
@@ -1423,7 +1493,7 @@ function AdminDashboard({ session, onLogout }) {
                           type="text"
                           placeholder="Type section..."
                           value={studentFilterSection}
-                          onChange={(e) => setStudentFilterSection(e.target.value)}
+                          onChange={(e) => { setPickerPage(1); setStudentFilterSection(e.target.value) }}
                         />
                       </label>
                     </div>
@@ -1440,13 +1510,13 @@ function AdminDashboard({ session, onLogout }) {
                             filteredStudents.every((s) => selectedStudentsForClass[s.id])
                           }
                         />
-                        <span>Select all filtered students</span>
+                        <span>Select all students on this page</span>
                       </label>
-                      <span className="student-count-badge">{filteredStudents.length} shown</span>
+                      <span className="student-count-badge">{pickerTotal} matches</span>
                     </div>
 
                     <div className="student-list">
-                      {filteredStudents.length === 0 ? (
+                      {pickerLoading ? <p className="info-text">Loading students...</p> : filteredStudents.length === 0 ? (
                         <p className="empty-state">No students match the selected filters.</p>
                       ) : (
                         filteredStudents.map((student) => {
@@ -1475,6 +1545,7 @@ function AdminDashboard({ session, onLogout }) {
                         })
                       )}
                     </div>
+                    <PaginationControls page={pickerPage} total={pickerTotal} limit={PAGE_SIZE} onPageChange={setPickerPage} disabled={pickerLoading} label="students" />
 
                     <p className="info-text selected-summary">
                       Selected:{' '}
@@ -1487,7 +1558,7 @@ function AdminDashboard({ session, onLogout }) {
               </section>
 
               <article className="panel">
-                <h2>Existing Classes ({classes.length})</h2>
+                <div className="panel-head"><div><h2>Existing Classes</h2><p className="subtitle">{classesTotal} classes across the platform.</p></div></div>
 
                 <div className="table-wrap">
                   <table>
@@ -1507,40 +1578,16 @@ function AdminDashboard({ session, onLogout }) {
                           </td>
                         </tr>
                       ) : (
-                        classes.map((cls) => {
-                          // Logic to find the teacher name
-                          const assignedTeacher = teachers.find((t) => String(t.id) === String(cls.teacher_id || cls.teacherId));
-                          
-                          return (
+                        classes.map((cls) => (
                             <tr key={cls.id || cls._id}>
-                              {/* Display the combined Name field */}
                               <td>{cls.name || `${cls.grade_level} - ${cls.section}`}</td>
-                              <td>
-                                {assignedTeacher
-                                  ? `${assignedTeacher.first_name} ${assignedTeacher.last_name}`
-                                  : 'Unassigned'}
-                              </td>
-                              <td>{cls.student_count || cls.students?.length || 0}</td>
+                              <td>{cls.teacher_name || 'Unassigned'}</td>
+                              <td>{cls.student_count ?? 0}</td>
                               <td className="actions-cell">
                                 <button
                                   className="btn btn-ghost"
                                   type="button"
-                                  onClick={() => {
-                                    setViewingClass(cls);
-                                    const initialSelected = {};
-                                    const classId = cls.id || cls._id;
-                                    const classStudentIds = new Set((cls.student_ids || cls.studentIds || []).map((id) => String(id)));
-                                    users.forEach(u => {
-                                      if (
-                                        u.role === 'Student' &&
-                                        (String(u.class_id || '') === String(classId) || classStudentIds.has(String(u.id)))
-                                      ) {
-                                        initialSelected[u.id] = true;
-                                      }
-                                    });
-                                    setSelectedStudentsForClass(initialSelected);
-                                    setIsViewModalOpen(true);
-                                  }}
+                                  onClick={() => void openClassEditor(cls)}
                                   style={{ marginRight: '8px' }}
                                 >
                                   View/Edit
@@ -1554,12 +1601,12 @@ function AdminDashboard({ session, onLogout }) {
                                 </button>
                               </td>
                             </tr>
-                          );
-                        })
+                          ))
                       )}
                     </tbody>
                   </table>
                 </div>
+                <PaginationControls page={classesPage} total={classesTotal} limit={PAGE_SIZE} onPageChange={setClassesPage} label="classes" />
               </article>
             </>
           )}
@@ -1595,7 +1642,7 @@ function AdminDashboard({ session, onLogout }) {
           
                   {/* SECTION 2: STUDENT MANAGEMENT */}
                   <h3>Class Members & Linked Parents</h3>
-                  <p className="info-text">Uncheck a student to remove them, or use the selection list below to add more.</p>
+                  <p className="info-text">Remove class members or add students from the paged directory below.</p>
                   
                   <div className="table-wrap" style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '1rem' }}>
                     <table>
@@ -1607,37 +1654,11 @@ function AdminDashboard({ session, onLogout }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {users.filter(u => u.role === 'Student').map(student => {
-                          const isMember = selectedStudentsForClass[student.id];
-                          if (!isMember) return null;
-
-                          // Try to find the linked parent
-                          const linkedParent = users.find(p => {
-                            if (p.role !== 'Parent') return false;
-
-                            // Match by parent_id first (most reliable)
-                            if (student.parent_id && String(p.id) === String(student.parent_id)) {
-                              return true
-                            }
-
-                            // Match by parent_name as fallback
-                            if (student.parent_name && p.username === student.parent_name) {
-                              return true
-                            }
-
-                            return false
-                          });
-
-                          const parentDisplay = linkedParent
-                            ? `${linkedParent.first_name} ${linkedParent.last_name}`
-                            : student.parent_name || 'No parent linked'
-
+                        {classRosterLoading ? <tr><td colSpan={3}>Loading class members...</td></tr> : classRoster.filter((student) => selectedStudentsForClass[student.id]).map(student => {
                           return (
                             <tr key={student.id}>
                               <td>{student.first_name} {student.last_name}</td>
-                              <td style={{ color: linkedParent ? 'inherit' : '#999' }}>
-                                {parentDisplay}
-                              </td>
+                              <td>{student.parent_name || 'No parent linked'}</td>
                               <td>
                                 <button
                                   type="button"
@@ -1651,18 +1672,19 @@ function AdminDashboard({ session, onLogout }) {
                             </tr>
                           );
                         })}
-                        {Object.values(selectedStudentsForClass).filter(Boolean).length === 0 && (
-                          <tr><td colSpan={3} style={{ textAlign: 'center', padding: '1rem' }}>No students selected for this class.</td></tr>
+                        {!classRosterLoading && classRoster.filter((student) => selectedStudentsForClass[student.id]).length === 0 && (
+                          <tr><td colSpan={3} style={{ textAlign: 'center', padding: '1rem' }}>No members on this page.</td></tr>
                         )}
                       </tbody>
                     </table>
                   </div>
+                  <PaginationControls page={classRosterPage} total={classRosterTotal} limit={PAGE_SIZE} onPageChange={setClassRosterPage} disabled={classRosterLoading} label="class members" />
           
                   <div className="add-students-area" style={{ marginTop: '1.5rem', border: '1px solid #eee', padding: '1rem', marginBottom: '2rem' }}>
                     <h4 style={{ marginTop: 0 }}>Add More Students</h4>
                     <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                      {users
-                        .filter(u => u.role === 'Student' && !selectedStudentsForClass[u.id])
+                      {pickerLoading ? <p className="info-text">Loading students...</p> : pickerStudents
+                        .filter(u => !selectedStudentsForClass[u.id])
                         .map(student => (
                           <label key={student.id} className="student-checkbox" style={{ display: 'block', padding: '5px', cursor: 'pointer' }}>
                             <input
@@ -1675,10 +1697,11 @@ function AdminDashboard({ session, onLogout }) {
                             {student.class_name && ` (${student.class_name})`}
                           </label>
                         ))}
-                      {users.filter(u => u.role === 'Student' && !selectedStudentsForClass[u.id]).length === 0 && (
+                      {!pickerLoading && pickerStudents.filter(u => !selectedStudentsForClass[u.id]).length === 0 && (
                         <p className="info-text" style={{ margin: 0 }}>No more students available to add.</p>
                       )}
                     </div>
+                    <PaginationControls page={pickerPage} total={pickerTotal} limit={PAGE_SIZE} onPageChange={setPickerPage} disabled={pickerLoading} label="students" />
                   </div>
           
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
@@ -1695,8 +1718,9 @@ function AdminDashboard({ session, onLogout }) {
             <AdminActivityLog session={session} onLogout={onLogout} />
           )}
 
-        </>
-      )}
+          </>
+          )}
+      </>
 
       {analyticsModal && (
         <div className="analytics-modal-overlay" role="presentation" onClick={() => setAnalyticsModal(null)}>
