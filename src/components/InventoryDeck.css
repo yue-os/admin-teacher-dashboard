@@ -1,0 +1,441 @@
+﻿.inventory-deck {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  align-items: center;
+  gap: clamp(2rem, 7vw, 6rem);
+  width: min(100%, 66rem);
+  min-height: 24rem;
+  margin-inline: auto;
+}
+
+.inventory-deck__details {
+  max-width: 29rem;
+}
+
+.inventory-deck__eyebrow {
+  margin: 0 0 0.65rem;
+  color: var(--teal);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.inventory-deck__details h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(2rem, 3.5vw, 2.8rem);
+  line-height: 1.05;
+}
+
+.inventory-deck__intro {
+  max-width: 28rem;
+  margin: 0.9rem 0 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.inventory-deck__selected {
+  margin-top: clamp(1.5rem, 4vw, 2.5rem);
+  animation: inventory-item-reveal 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.inventory-deck__item-count {
+  color: var(--teal);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.inventory-deck__selected h4 {
+  margin: 0.55rem 0 0;
+  color: var(--ink);
+  font-size: clamp(1.45rem, 2.5vw, 2rem);
+  line-height: 1.15;
+}
+
+.inventory-deck__selected > p {
+  max-width: 28rem;
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.inventory-deck__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.4rem;
+}
+
+.inventory-deck__controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 42px;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.inventory-deck__controls button:hover:not(:disabled),
+.inventory-deck__controls button:focus-visible {
+  border-color: var(--teal);
+  background: #f0f9f8;
+  transform: translateY(-2px);
+}
+
+.inventory-deck__controls button:disabled {
+  cursor: wait;
+}
+
+.inventory-deck__visual {
+  min-width: 0;
+  padding: 1rem 2rem 1rem 0;
+  text-align: center;
+}
+
+.inventory-deck__stack {
+  position: relative;
+  width: min(100%, 27rem);
+  height: clamp(19rem, 34vw, 27rem);
+  margin-inline: auto;
+  overflow: visible;
+  isolation: isolate;
+}
+
+.inventory-deck__card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: var(--stack-index);
+  display: grid;
+  place-items: center;
+  width: clamp(11rem, 19vw, 16rem);
+  height: 100%;
+  max-height: 24rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px; /* Subtle rounding matching the image */
+  overflow: hidden;
+  outline-offset: 5px;
+  background: transparent;
+  filter:
+    drop-shadow(0 2px 3px rgb(22 29 44 / var(--stack-shadow-opacity)))
+    drop-shadow(0 9px 10px rgb(22 29 44 / calc(var(--stack-shadow-opacity) * 0.55)));
+  appearance: none;
+  cursor: default;
+  transform:
+    translate(-50%, -50%)
+    translateX(var(--stack-x))
+    translateY(var(--stack-y))
+    rotate(var(--stack-rotation))
+    scale(var(--stack-scale));
+  transform-origin: bottom center;
+  transition:
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.42s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.inventory-deck__card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill; /* Keeps the entire card image visible */
+  border-radius: inherit; 
+  user-select: none;
+}
+
+.inventory-deck__card--top {
+  cursor: pointer;
+}
+
+.inventory-deck__card--top:focus-visible {
+  outline: 3px solid var(--teal);
+}
+
+.inventory-deck__card--top:hover:not(:disabled) {
+  filter:
+    drop-shadow(0 3px 4px rgb(22 29 44 / 0.22))
+    drop-shadow(0 12px 14px rgb(22 29 44 / 0.14));
+}
+
+.inventory-deck__card--top:disabled {
+  cursor: wait;
+}
+
+.inventory-deck__card.is-cycling-next {
+  animation: inventory-card-cycle-next 0.42s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+.inventory-deck__card.is-cycling-previous {
+  animation: inventory-card-cycle-previous 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.inventory-deck__hint {
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+@keyframes inventory-card-cycle-next {
+  0%,
+  12% {
+    z-index: 4;
+  }
+  52% {
+    z-index: 0;
+    transform:
+      translate(-50%, -50%)
+      translate(1.75rem, 3.75rem)
+      rotate(11deg)
+      scale(0.9);
+  }
+  66% {
+    z-index: 0;
+    opacity: 0;
+    transform:
+      translate(-50%, -50%)
+      translate(2.5rem, 5rem)
+      rotate(15deg)
+      scale(0.84);
+  }
+  67% {
+    z-index: 1;
+    opacity: 0;
+    transform:
+      translate(-50%, -50%)
+      translateX(var(--back-stack-x))
+      translateY(var(--back-stack-y))
+      rotate(var(--back-stack-rotation))
+      scale(var(--back-stack-scale));
+  }
+  100% {
+    z-index: 1;
+    opacity: 1;
+    transform:
+      translate(-50%, -50%)
+      translateX(var(--back-stack-x))
+      translateY(var(--back-stack-y))
+      rotate(var(--back-stack-rotation))
+      scale(var(--back-stack-scale));
+  }
+}
+
+@keyframes inventory-card-cycle-previous {
+  0% {
+    z-index: 1;
+    opacity: 0.65;
+    transform:
+      translate(-50%, -50%)
+      translateX(var(--stack-x))
+      translateY(var(--stack-y))
+      rotate(var(--stack-rotation))
+      scale(var(--stack-scale));
+  }
+  100% {
+    z-index: 4;
+    opacity: 1;
+    transform:
+      translate(-50%, -50%)
+      translateX(var(--front-stack-x))
+      translateY(var(--front-stack-y))
+      rotate(var(--front-stack-rotation))
+      scale(var(--front-stack-scale));
+  }
+}
+
+@keyframes inventory-item-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 760px) {
+  .inventory-deck {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+
+  .inventory-deck__details {
+    max-width: none;
+    text-align: center;
+  }
+
+  .inventory-deck__intro,
+  .inventory-deck__selected > p {
+    margin-inline: auto;
+  }
+
+  .inventory-deck__controls {
+    justify-content: center;
+  }
+
+  .inventory-deck__visual {
+    padding: 0 1rem 0 0;
+  }
+
+  .inventory-deck__stack {
+    width: min(100%, 22rem);
+    height: clamp(17rem, 72vw, 22rem);
+  }
+
+  .inventory-deck__card {
+    width: clamp(9rem, 48vw, 12rem);
+    transform:
+      translate(-50%, -50%)
+      translateX(var(--compact-stack-x))
+      translateY(var(--stack-y))
+      rotate(var(--compact-stack-rotation))
+      scale(var(--stack-scale));
+  }
+
+  .inventory-deck__card.is-cycling-next {
+    animation-name: inventory-card-cycle-next-compact;
+  }
+
+  .inventory-deck__card.is-cycling-previous {
+    animation-name: inventory-card-cycle-previous-compact;
+  }
+
+  @keyframes inventory-card-cycle-next-compact {
+    0%,
+    12% {
+      z-index: 4;
+    }
+    52% {
+      z-index: 0;
+      transform:
+        translate(-50%, -50%)
+        translate(1rem, 3rem)
+        rotate(9deg)
+        scale(0.9);
+    }
+    66% {
+      z-index: 0;
+      opacity: 0;
+      transform:
+        translate(-50%, -50%)
+        translate(1.5rem, 4rem)
+        rotate(12deg)
+        scale(0.84);
+    }
+    67% {
+      z-index: 1;
+      opacity: 0;
+      transform:
+        translate(-50%, -50%)
+        translateX(var(--compact-back-stack-x))
+        translateY(var(--back-stack-y))
+        rotate(var(--compact-back-stack-rotation))
+        scale(var(--back-stack-scale));
+    }
+    100% {
+      z-index: 1;
+      opacity: 1;
+      transform:
+        translate(-50%, -50%)
+        translateX(var(--compact-back-stack-x))
+        translateY(var(--back-stack-y))
+        rotate(var(--compact-back-stack-rotation))
+        scale(var(--back-stack-scale));
+    }
+  }
+
+  @keyframes inventory-card-cycle-previous-compact {
+    0% {
+      z-index: 1;
+      opacity: 0.65;
+      transform:
+        translate(-50%, -50%)
+        translateX(var(--compact-stack-x))
+        translateY(var(--stack-y))
+        rotate(var(--compact-stack-rotation))
+        scale(var(--stack-scale));
+    }
+    100% {
+      z-index: 4;
+      opacity: 1;
+      transform:
+        translate(-50%, -50%)
+        translateX(var(--compact-front-stack-x))
+        translateY(var(--front-stack-y))
+        rotate(var(--compact-front-stack-rotation))
+        scale(var(--front-stack-scale));
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inventory-deck__card,
+  .inventory-deck__controls button {
+    transition: none;
+  }
+
+  .inventory-deck__selected {
+    animation: none;
+  }
+
+  .inventory-deck__card.is-cycling {
+    animation: none;
+  }
+}
+
+/* Item depth and motion details. */
+.inventory-deck__card {
+  opacity: var(--stack-opacity, 1);
+}
+
+.inventory-deck__card--top:hover:not(:disabled) {
+  transform:
+    translate(-50%, -50%)
+    translateX(var(--stack-x))
+    translateY(calc(var(--stack-y) - 0.35rem))
+    rotate(var(--stack-rotation))
+    scale(1.05);
+  filter:
+    drop-shadow(0 4px 5px rgb(22 29 44 / 0.24))
+    drop-shadow(0 14px 16px rgb(22 29 44 / 0.17));
+}
+
+.inventory-deck__selected h4 {
+  animation: inventory-detail-content-in 0.34s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation-delay: 0.04s;
+}
+
+.inventory-deck__selected > p {
+  animation: inventory-detail-content-in 0.36s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation-delay: 0.1s;
+}
+
+.inventory-deck__controls button:active:not(:disabled) {
+  background: #e6f4f3;
+  transform: translateY(0) scale(0.97);
+}
+
+@keyframes inventory-detail-content-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* Clip the inventory artwork itself to a rounded card silhouette. */
+.inventory-deck__card, .inventory-deck__card img {
+  border-radius: 22px;
+  clip-path: inset(5 round 22px);
+}

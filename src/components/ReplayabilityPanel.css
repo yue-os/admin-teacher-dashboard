@@ -1,0 +1,32 @@
+﻿.replayability-panel { grid-template-columns: .9fr 1.1fr; align-items: start; }
+.replayability-panel__copy>p:last-of-type { margin-bottom: 0; }
+.replayability-panel__features { display: flex; flex-direction: column; }
+.replayability-panel__feature { display: grid; grid-template-columns: 34px 1fr; align-items: start; gap: 14px; width: 100%; padding: 13px 10px; border: 0; border-bottom: 1px solid rgba(22,142,172,.22); border-radius: 9px; color: #163274; background: transparent; text-align: left; cursor: pointer; transition: transform .28s cubic-bezier(.2,.8,.2,1),background .25s ease,box-shadow .25s ease; }
+.replayability-panel__feature:last-child { border-bottom: 0; }
+.replayability-panel__feature:hover,.replayability-panel__feature:focus-visible,.replayability-panel__feature.is-active { transform: translateX(8px); background: rgba(255,255,255,.7); box-shadow: 0 5px 15px rgba(22,50,116,.06); outline: none; }
+.replayability-panel__number { color: #168eac; font-size: .72rem; font-weight: 900; line-height: 1.5; }
+.replayability-panel__feature-copy { display: grid; gap: 7px; }
+.replayability-panel__feature-copy strong { color: #163274; font-size: .84rem; line-height: 1.35; letter-spacing: .035em; }
+.replayability-panel__example { color: #5c6d85; font-size: .78rem; line-height: 1.45; animation: replayability-example-in .22s ease both; }
+.health-preview { margin-top: 19px; padding: 15px; border: 1px solid #d8e5ea; border-radius: 15px; background: rgba(255,255,255,.72); }
+.health-preview__heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.health-preview__heading>div { display: grid; gap: 5px; }
+.health-preview__heading .home-eyebrow { margin: 0; font-size: .61rem; }
+.health-preview__heading strong { color: #163274; font-size: .9rem; }
+.health-preview__hp { padding: 6px 9px; border-radius: 9px; color: #fff; font-size: .74rem; font-weight: 900; }
+.health-preview__hp--healthy { background: #288855; }.health-preview__hp--weak { background: #b27a11; }.health-preview__hp--sick { background: #d36e22; }.health-preview__hp--critical { background: #b53243; animation: critical-soft-pulse 1.7s ease-in-out infinite; }
+.health-preview__gauge { height: 9px; margin: 13px 0 11px; overflow: hidden; border-radius: 99px; background: #e8edf2; }
+.health-preview__gauge-fill { display: block; height: 100%; border-radius: inherit; transition: width .55s cubic-bezier(.2,.8,.2,1); }
+.health-preview__gauge-fill--healthy { background: #288855; }.health-preview__gauge-fill--weak { background: #d9aa35; }.health-preview__gauge-fill--sick { background: #e58235; }.health-preview__gauge-fill--critical { background: #b53243; }
+.health-preview__pills { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 6px; }
+.health-preview__pill { display: grid; justify-items: center; gap: 3px; min-width: 0; padding: 7px 4px; border: 1px solid transparent; border-radius: 9px; color: #fff; font: 800 .62rem 'Fira Sans',system-ui,sans-serif; cursor: pointer; opacity: .68; transition: opacity .2s ease,transform .2s ease,box-shadow .2s ease; }
+.health-preview__pill span { font-size: .57rem; font-weight: 700; white-space: nowrap; }
+.health-preview__pill:hover,.health-preview__pill.is-active { transform: translateY(-2px); opacity: 1; box-shadow: 0 5px 12px rgba(22,50,116,.15); }
+.health-preview__pill--healthy { background: #288855; }.health-preview__pill--weak { background: #c18b1a; }.health-preview__pill--sick { background: #d36e22; }.health-preview__pill--critical { background: #b53243; }
+.health-preview__pill--critical.is-active { animation: critical-soft-pulse 1.7s ease-in-out infinite; }
+.health-preview__description { min-height: 36px; margin: 11px 0 0; color: #586a82; font-size: .74rem; line-height: 1.45; animation: replayability-example-in .2s ease both; }
+.health-preview__description--critical { color: #a12c3d; }
+@keyframes replayability-example-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes critical-soft-pulse { 50% { box-shadow: 0 0 0 4px rgba(181,50,67,.13); } }
+@media(max-width:700px) { .replayability-panel { display: block; } .replayability-panel__features { margin-top: 25px; } .health-preview__pill { font-size: .57rem; } .health-preview__pill span { font-size: .51rem; } }
+@media(prefers-reduced-motion:reduce) { .replayability-panel__feature,.health-preview__gauge-fill,.health-preview__pill,.health-preview__description,.replayability-panel__example,.health-preview__hp--critical,.health-preview__pill--critical.is-active { transition: none; animation: none; } }

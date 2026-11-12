@@ -1,0 +1,251 @@
+.fanned-deck {
+  --fan-card-width: clamp(10rem, 15vw, 13rem);
+  position: relative;
+  display: block;
+  width: 100%;
+  height: clamp(19rem, 30vw, 23rem);
+  perspective: 1000px;
+  isolation: isolate;
+}
+
+.fanned-deck-hint {
+  margin: 0.5rem 0 0;
+  color: #60708b;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.fanned-deck__card {
+  position: absolute;
+  left: 50%;
+  bottom: var(--fan-lift, 0rem);
+  width: min(var(--fan-card-width), 76%);
+  margin: 0;
+  padding: 0;
+  border: 3px solid var(--role-border, transparent);
+  border-radius: 20px;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: none;
+  appearance: none;
+  cursor: pointer;
+  transform-origin: bottom center;
+  transform: translateX(calc(-50% + var(--rest-x))) rotate(var(--rest-rotation));
+  z-index: var(--card-index);
+  transition: transform 0.3s cubic-bezier(.22,.7,.25,1), opacity 0.3s ease-out, filter 0.3s ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fanned-deck__card:focus-visible {
+  outline: 3px solid #168eac;
+  outline-offset: 4px;
+}
+
+.fanned-deck:hover > .fanned-deck__card,
+.fanned-deck:focus-within > .fanned-deck__card {
+  transform: translateX(calc(-50% + var(--hover-x))) rotate(var(--hover-rotation));
+}
+
+/* Selected cards lift like a card held forward from the hand. */
+.fanned-deck:has(> .fanned-deck__card:hover) > .fanned-deck__card:not(:hover) {
+  opacity: .82;
+  filter: saturate(.82);
+}
+
+.fanned-deck:hover > .fanned-deck__card:hover,
+.fanned-deck:focus-within > .fanned-deck__card:focus-visible {
+  z-index: 30;
+  transform: translateX(calc(-50% + var(--hover-x))) translateY(-24px) rotate(0deg) scale(1.05);
+  filter: drop-shadow(0 18px 18px rgb(30 58 138 / 24%));
+}
+
+/* Keep the existing GameCard component but show only its borderless artwork. */
+.fanned-deck__card .game-card {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fanned-deck__card .game-card-image-wrap {
+  position: relative;
+  aspect-ratio: auto;
+  overflow: hidden;
+
+  border-radius: 5px;
+  background: transparent;
+}
+
+.fanned-deck__card .game-card-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 20rem;
+  object-fit: contain;
+}
+
+.fanned-deck__card .game-card h3,
+.fanned-deck__card .game-card p {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .fanned-deck {
+    --fan-card-width: clamp(9rem, 24vw, 11rem);
+    height: 19rem;
+  }
+
+  .fanned-deck__card {
+    transform: translateX(calc(-50% + var(--compact-rest-x))) rotate(var(--compact-rest-rotation));
+  }
+
+  .fanned-deck:hover > .fanned-deck__card,
+  .fanned-deck:focus-within > .fanned-deck__card {
+    transform: translateX(calc(-50% + var(--compact-hover-x))) rotate(var(--compact-hover-rotation));
+  }
+
+  .fanned-deck:hover > .fanned-deck__card:hover,
+  .fanned-deck:focus-within > .fanned-deck__card:focus-visible {
+    transform: translateX(calc(-50% + var(--compact-hover-x))) translateY(-24px) rotate(0deg) scale(1.05);
+  }
+}
+
+@media (max-width: 600px) {
+  .fanned-deck {
+    --fan-card-width: clamp(7rem, 32vw, 9rem);
+    height: 16rem;
+  }
+
+  .fanned-deck__card .game-card-image {
+    max-height: 15rem;
+  }
+}
+
+.card-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgb(15 27 50 / 58%);
+  backdrop-filter: blur(5px);
+}
+
+.card-detail-modal {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) 1.2fr;
+  align-items: center;
+  gap: clamp(1.25rem, 4vw, 2.5rem);
+  width: min(100%, 620px);
+  padding: clamp(1.5rem, 5vw, 2.5rem);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 28%);
+  animation: card-modal-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.card-detail-close {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.8rem;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: #f1f4f7;
+  color: #1e3a8a;
+  font-size: 1.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.card-detail-image {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+}
+
+.card-detail-eyebrow {
+  margin: 0 0 0.5rem;
+  color: #168eac;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.card-detail-copy h3 {
+  margin: 0 0 0.75rem;
+  color: #1e3a8a;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+}
+
+.card-detail-copy > p:last-child {
+  margin: 0;
+  color: #60708b;
+  line-height: 1.65;
+}
+
+@keyframes card-modal-enter {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 500px) {
+  .card-detail-modal {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    text-align: center;
+  }
+
+  .card-detail-image {
+    width: min(55%, 170px);
+    margin-inline: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fanned-deck__card,
+  .card-detail-modal {
+    transition: none;
+    animation: none;
+  }
+}
+
+.fanned-deck__card .game-card-image-wrap::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(112deg, transparent 28%, rgba(255,255,255,.34) 48%, transparent 66%);
+  transform: translateX(-140%);
+  animation: fanned-card-sheen 6.5s ease-in-out infinite;
+}
+
+.fanned-deck__card:nth-child(2n) .game-card-image-wrap::after { animation-delay: 1.7s; }
+.fanned-deck__card:nth-child(3n) .game-card-image-wrap::after { animation-delay: 3.2s; }
+
+@keyframes fanned-card-sheen {
+  0%, 48% { transform: translateX(-140%); opacity: 0; }
+  58% { opacity: .8; }
+  76%, 100% { transform: translateX(140%); opacity: 0; }
+}
+
+@media (max-width: 900px) {
+  .fanned-deck:hover > .fanned-deck__card:hover,
+.fanned-deck:focus-within > .fanned-deck__card:focus-visible {
+    transform: translateX(calc(-50% + var(--compact-hover-x))) translateY(-24px) rotate(0deg) scale(1.05);
+  }
+}
+
+.card-detail-modal-custom { display: block; width: min(100%, 760px); padding: 0; border-radius: 24px; background: transparent; box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) { .fanned-deck__card .game-card-image-wrap::after { animation: none; } }
+.card-detail-modal-custom { text-align: left; }

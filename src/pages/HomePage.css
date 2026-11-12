@@ -43,3 +43,22 @@
 }
 
 .home-hero .hero-copy > .home-eyebrow{margin-bottom:30px}
+
+.game-elements{padding:clamp(56px,7vw,88px) 0}
+.game-elements>.home-section-heading{margin-bottom:clamp(28px,4vw,40px)}
+.game-elements .element-group{margin-top:clamp(36px,5vw,56px);padding-top:0}
+.game-elements>.home-section-heading+.element-group{margin-top:0}
+.game-elements .element-group-heading{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:12px;text-align:center}
+.game-elements .element-group-heading h3{font-size:clamp(1.25rem,2.1vw,1.5rem);line-height:1.2}
+.game-elements .element-group-heading p{max-width:620px;margin:0;color:var(--muted);font-size:.95rem;line-height:1.55}
+.game-elements .fanned-deck{width:min(100%,54rem);height:calc(clamp(14rem,19vw,17rem) + var(--fan-curve-space));margin-inline:auto;--fan-card-width:clamp(8.5rem,13vw,11rem);--fan-curve-space:2.5rem}
+.game-elements .fanned-deck__card .game-card-image{max-height:18rem}
+
+@media(max-width:700px){
+  .game-elements{padding:52px 0}
+  .game-elements>.home-section-heading{margin-bottom:28px}
+  .game-elements .element-group{margin-top:36px}
+  .game-elements>.home-section-heading+.element-group{margin-top:0}
+  .game-elements .fanned-deck{height:calc(clamp(10.75rem,44vw,12.5rem) + var(--fan-curve-space));--fan-card-width:clamp(6.75rem,30vw,8rem)}
+  .game-elements .fanned-deck__card .game-card-image{max-height:15rem}
+}
